@@ -17,9 +17,18 @@ Documentation: **[etiennecoumont.github.io/hopper-jobqueue](https://etiennecoumo
 
 The name is a double pun.
 
-| ![An industrial hopper: bulk in at the top, one job at a time out onto a conveyor](docs/images/hopper-industrial.svg) | ![A night scene in the mood of an Edward Hopper painting: a lone figure in a lit diner window](docs/images/hopper-painter.svg) |
-|---|---|
-| An **industrial hopper** takes bulk loads dumped in at the top and feeds them out of the bottom in a steady, measured stream. That is precisely this service: producers tip jobs in as they come; workers draw them out one at a time. | **Edward Hopper** painted lone figures waiting under artificial light in the middle of the night. Anyone who has watched a worker poll an empty queue at 3 a.m. knows the mood. |
+<table>
+<tr>
+<td width="50%" valign="top">
+<a href="docs/images/hopper-industrial.svg"><img src="docs/images/hopper-industrial.svg" width="100%" alt="An industrial hopper: bulk in at the top, one job at a time out onto a conveyor"></a>
+An <b>industrial hopper</b> takes bulk loads dumped in at the top and feeds them out of the bottom in a steady, measured stream. That is precisely this service: producers tip jobs in as they come; workers draw them out one at a time.
+</td>
+<td width="50%" valign="top">
+<a href="docs/images/hopper-painter.svg"><img src="docs/images/hopper-painter.svg" width="100%" alt="A night scene in the mood of an Edward Hopper painting: a lone figure in a lit diner window"></a>
+<b>Edward Hopper</b> painted lone figures waiting under artificial light in the middle of the night. Anyone who has watched a worker poll an empty queue at 3 a.m. knows the mood.
+</td>
+</tr>
+</table>
 
 *Both illustrations are original vector art drawn for this project and dedicated to the
 public domain — no rights reserved.*
@@ -27,15 +36,18 @@ public domain — no rights reserved.*
 ## Screenshots
 
 The admin dashboard — server-rendered Razor Pages, one hand-written CSS file, no
-front-end build:
+front-end build. Click any screenshot for full size:
 
-![Overview: counters per status, oldest pending age, per-worker activity](docs/images/dashboard-overview.png)
+<p align="center">
+  <a href="docs/images/dashboard-overview.png"><img src="docs/images/dashboard-overview.png" width="49%" alt="Overview: counters per status, oldest pending age, per-worker activity"></a>
+  <a href="docs/images/dashboard-jobs.png"><img src="docs/images/dashboard-jobs.png" width="49%" alt="Job list with filters and inline requeue/cancel actions"></a>
+</p>
+<p align="center">
+  <a href="docs/images/dashboard-job-detail.png"><img src="docs/images/dashboard-job-detail.png" width="49%" alt="Job detail: last error, payload, full audit timeline"></a>
+  <a href="docs/images/dashboard-keys.png"><img src="docs/images/dashboard-keys.png" width="49%" alt="API keys: creation with allowed kinds, one-time display, revocation"></a>
+</p>
 
-![Job list with filters and inline requeue/cancel actions](docs/images/dashboard-jobs.png)
-
-![Job detail: last error, payload, full audit timeline](docs/images/dashboard-job-detail.png)
-
-More pages (keys, kinds, sign-in) in the
+More pages (kinds, sign-in, a successful job with its result) in the
 [operations guide](docs/operations.md).
 
 ## Features
