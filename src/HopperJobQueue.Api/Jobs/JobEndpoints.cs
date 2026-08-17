@@ -270,6 +270,8 @@ public static class JobEndpoints
         HttpContext context, JobStore store, CancellationToken ct,
         string? status, string? project, string? kind, string? q, int page = 1)
     {
+        // HTML forms submit `?status=` for an unset filter: empty means "no filter".
+        status = string.IsNullOrWhiteSpace(status) ? null : status;
         if (status is not null && !JobStatus.All.Contains(status))
         {
             return BadRequest($"status must be one of: {string.Join(", ", JobStatus.All)}.");

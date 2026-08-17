@@ -61,6 +61,8 @@ public sealed class ScopeIsolationTests(IntegrationFixture fixture) : IAsyncLife
         Assert.Equal(HttpStatusCode.Created, (await admin.EnqueueAsync("admin:1", Kind)).StatusCode);
         Assert.Equal(HttpStatusCode.OK, (await admin.ClaimAsync(workerId: "admin-probe")).StatusCode);
         Assert.Equal(HttpStatusCode.OK, (await admin.GetAsync("/api/v1/jobs?status=leased")).StatusCode);
+        // An empty status filter (as submitted by HTML forms) means "no filter", not a 400.
+        Assert.Equal(HttpStatusCode.OK, (await admin.GetAsync("/api/v1/jobs?status=&q=")).StatusCode);
         Assert.Equal(HttpStatusCode.OK, (await admin.GetAsync("/api/v1/stats")).StatusCode);
     }
 
