@@ -29,6 +29,15 @@ read it before any evolution.
   cycle, restore procedure) lives in `docs/` — a GitHub Pages site
   (Jekyll Cayman, `docs/_config.yml`; enable via Settings → Pages → branch + `/docs`).
   Screenshots and the two name illustrations are in `docs/images/`.
+- Docker: root `compose.yaml` is DEV ONLY (PostgreSQL on localhost:5432 with dev
+  credentials + a `try` profile running the GHCR image; the API itself runs on the
+  host via `dotnet watch`). `deploy/compose.yaml` is the production artifact — copied
+  to a server directory next to a `.env` (no checkout, no build, bare `docker
+  compose` commands), pulling `ghcr.io/etiennecoumont/hopper-jobqueue` published by
+  `.github/workflows/docker.yml` (tests gate the publish; tags: `latest` on main,
+  `X.Y.Z` on `v*` tags, immutable `sha-<commit>`). `deploy/backup.sh` /
+  `deploy/restore.sh` cd to their own directory and are copied alongside. There is
+  no compose.override.yaml and no wrapper — keep it that way.
 
 ## Invariants (covered by tests, do not break)
 
@@ -69,18 +78,24 @@ read it before any evolution.
   Behind Traefik, X-Forwarded-Proto=https ⇒ Secure in production.
 - **Kind management on the dashboard** (`/admin/kinds`): needed for "kind declared
   before use" + pause control; deliberately absent from the API surface.
+- **Docker architecture diverges from the brief's §13** (owner's decision, 2026-08):
+  the in-container `dotnet watch` dev override is gone — dev is host-run `dotnet
+  watch` + a db-only compose; production is a copied deploy artifact pulling the
+  CI-built GHCR image instead of `docker compose build` on the server.
 
 ## Commands
 
 ```bash
 dotnet build                      # zero warnings required (TreatWarningsAsErrors)
 dotnet test                       # Docker required (Testcontainers, postgres:17 image)
-docker compose up -d              # dev: port 8080 published, dotnet watch (override)
-docker compose -f compose.yaml up -d --build    # prod: Traefik, no published port
-./ops/backup.sh <dir>             # custom-format pg_dump + 7d/4w retention
-./ops/restore.sh <dump>           # stops the API, recreates the db, restarts
+docker compose up -d              # dev: PostgreSQL only (localhost:5432, password hopper-dev)
+export HOPPER_DB_CONNECTIONSTRING="Host=127.0.0.1;Port=5432;Database=hopper;Username=hopper;Password=hopper-dev"
+dotnet watch --project src/HopperJobQueue.Api run --urls http://localhost:8080
+docker compose --profile try up -d   # full stack from the GHCR image, no SDK
+deploy/backup.sh <dir>            # prod: custom-format pg_dump + 7d/4w retention
+deploy/restore.sh <dump>          # prod: stops the API, recreates the db, restarts
 ```
 
-Config via env only, `HOPPER_` prefix (see README / `.env.example`). No new NuGet
+Config via env only, `HOPPER_` prefix (see README / `deploy/.env.example`). No new NuGet
 dependency without validation. UTC timestamps everywhere
 (`timestamptz` ↔ `DateTimeOffset`, Dapper handler in `Infrastructure/DapperConfig.cs`).

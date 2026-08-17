@@ -1,75 +1,45 @@
-# hopper-jobqueue behind Traefik. No port published on the host: Traefik reaches
-# the service through the Docker network, PostgreSQL stays on the internal network.
-# Variables expected in .env: see .env.example.
+# Development stack: PostgreSQL only. Run the API on the host, with hot reload:
+#
+#   docker compose up -d
+#   export HOPPER_DB_CONNECTIONSTRING="Host=127.0.0.1;Port=5432;Database=hopper;Username=hopper;Password=hopper-dev"
+#   dotnet watch --project src/HopperJobQueue.Api run --urls http://localhost:8080
+#
+# No .NET SDK? `docker compose --profile try up -d` also starts the CI-published
+# image on http://localhost:8080 — the full service, nothing to build.
+#
+# Production does not use this file: see deploy/ (a compose file to copy on the
+# server next to a .env — no checkout, no build).
+
+name: hopper-jobqueue-dev
 
 services:
-  hopper:
-    image: hopper-jobqueue
-    build: .
-    restart: unless-stopped
-    expose:
-      - "8080"
-    environment:
-      HOPPER_DB_CONNECTIONSTRING: >-
-        Host=hopper-db;Port=5432;Database=hopper;Username=hopper;Password=${HOPPER_DB_PASSWORD:?set HOPPER_DB_PASSWORD in .env}
-      HOPPER_BOOTSTRAP_ADMIN_KEY: ${HOPPER_BOOTSTRAP_ADMIN_KEY:-}
-      HOPPER_LOG_LEVEL: ${HOPPER_LOG_LEVEL:-Information}
-    depends_on:
-      hopper-db:
-        condition: service_healthy
-    # Margin above ASP.NET's ShutdownTimeout (20 s): the in-flight HTTP request finishes.
-    stop_grace_period: 30s
-    networks:
-      - traefik-public
-      - hopper-internal
-    labels:
-      - traefik.enable=true
-      - traefik.docker.network=${HOPPER_TRAEFIK_NETWORK:-traefik-public}
-      - traefik.http.services.hopper.loadbalancer.server.port=8080
-
-      - traefik.http.routers.hopper-api.rule=Host(`${HOPPER_PUBLIC_HOST:-hopper.exemple.ch}`) && (PathPrefix(`/api`) || Path(`/healthz`) || Path(`/readyz`))
-      - traefik.http.routers.hopper-api.entrypoints=${HOPPER_TRAEFIK_ENTRYPOINT:-websecure}
-      - traefik.http.routers.hopper-api.tls.certresolver=${HOPPER_TRAEFIK_CERTRESOLVER:-letsencrypt}
-      - traefik.http.routers.hopper-api.middlewares=hopper-buffer
-
-      - traefik.http.routers.hopper-admin.rule=Host(`${HOPPER_PUBLIC_HOST:-hopper.exemple.ch}`) && (PathPrefix(`/admin`) || Path(`/admin.css`))
-      - traefik.http.routers.hopper-admin.entrypoints=${HOPPER_TRAEFIK_ENTRYPOINT:-websecure}
-      - traefik.http.routers.hopper-admin.tls.certresolver=${HOPPER_TRAEFIK_CERTRESOLVER:-letsencrypt}
-      - traefik.http.routers.hopper-admin.middlewares=hopper-admin-allow,hopper-buffer
-
-      # /admin restricted by IP — extra defence, the admin key is still required behind it.
-      - traefik.http.middlewares.hopper-admin-allow.ipallowlist.sourcerange=${HOPPER_ADMIN_IP_ALLOWLIST:?set HOPPER_ADMIN_IP_ALLOWLIST in .env}
-
-      # Safety net upstream of the Kestrel limits (64 KiB / 512 KiB application-side).
-      - traefik.http.middlewares.hopper-buffer.buffering.maxRequestBodyBytes=1048576
-
   hopper-db:
-    # Major version pinned: never `latest`. A major bump forces a pg_upgrade or a
-    # dump/restore cycle (see README).
     image: postgres:17
-    restart: unless-stopped
     environment:
       POSTGRES_DB: hopper
       POSTGRES_USER: hopper
-      POSTGRES_PASSWORD: ${HOPPER_DB_PASSWORD:?set HOPPER_DB_PASSWORD in .env}
+      # Dev-only credentials; the port is bound to localhost.
+      POSTGRES_PASSWORD: hopper-dev
+    ports:
+      - "127.0.0.1:5432:5432"
     volumes:
-      - hopper-pgdata:/var/lib/postgresql/data
-    networks:
-      - hopper-internal
+      - hopper-pgdata-dev:/var/lib/postgresql/data
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U hopper -d hopper"]
       interval: 10s
       timeout: 5s
       retries: 5
-      start_period: 10s
+
+  hopper:
+    profiles: [try]
+    image: ghcr.io/etiennecoumont/hopper-jobqueue:${HOPPER_IMAGE_TAG:-latest}
+    environment:
+      HOPPER_DB_CONNECTIONSTRING: Host=hopper-db;Port=5432;Database=hopper;Username=hopper;Password=hopper-dev
+    ports:
+      - "127.0.0.1:8080:8080"
+    depends_on:
+      hopper-db:
+        condition: service_healthy
 
 volumes:
-  hopper-pgdata:
-
-networks:
-  # Must already exist (created by your Traefik stack, or `docker network create …`).
-  # Point HOPPER_TRAEFIK_NETWORK at the network your Traefik actually uses.
-  traefik-public:
-    external: true
-    name: ${HOPPER_TRAEFIK_NETWORK:-traefik-public}
-  hopper-internal:
+  hopper-pgdata-dev:

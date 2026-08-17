@@ -8,46 +8,50 @@ title: Getting started
 
 ## Requirements
 
-To **run** the service:
+To **run** the service (production): Docker with Compose v2, and a
+[Traefik](https://traefik.io/) instance for TLS termination (any TLS-terminating
+reverse proxy works, but the shipped labels target Traefik). The image is prebuilt
+by CI — nothing is compiled on the server.
 
-- Docker with Docker Compose v2.24+ (the dev override uses the `!reset` YAML tag)
-- For production: a [Traefik](https://traefik.io/) instance attached to a
-  `traefik-public` Docker network (any TLS-terminating reverse proxy works, but the
-  shipped labels target Traefik)
-
-To **develop**:
-
-- .NET SDK 10.0
-- Docker (the integration tests spin up a real PostgreSQL 17 via Testcontainers)
+To **develop**: .NET SDK 10.0, and Docker (the dev database runs in a container, and
+the integration tests spin up a real PostgreSQL 17 via Testcontainers).
 
 No outbound network access is required at runtime: the service never calls anything.
 
 ## First run (development)
 
+The dev compose file starts PostgreSQL only; the API runs on your machine with hot
+reload and a working debugger:
+
 ```bash
 git clone https://github.com/EtienneCoumont/hopper-jobqueue.git
 cd hopper-jobqueue
-docker network create traefik-public   # once
-cp .env.example .env                   # set HOPPER_DB_PASSWORD
-docker compose up -d                   # publishes :8080, runs dotnet watch
+docker compose up -d      # PostgreSQL on localhost:5432, dev credentials
+export HOPPER_DB_CONNECTIONSTRING="Host=127.0.0.1;Port=5432;Database=hopper;Username=hopper;Password=hopper-dev"
+dotnet watch --project src/HopperJobQueue.Api run --urls http://localhost:8080
 curl http://localhost:8080/healthz     # -> ok
 ```
 
-`compose.override.yaml` is picked up automatically in dev: it publishes the port and
-hot-mounts the source. In production you deploy with `-f compose.yaml` only — no port
-published, Traefik reaches the container over the Docker network.
+Without the .NET SDK, the `try` profile runs the CI-published image instead:
+
+```bash
+docker compose --profile try up -d     # database + API on http://localhost:8080
+```
+
+Production works differently — a copied compose file pulling the GHCR image, no
+checkout: see [Deployment](deployment.md).
 
 ## Bootstrap key
 
 On first start, if the key table is empty, the service creates an `admin` key and
-writes it **once** to the logs:
+writes it **once** to the logs — straight to your console under `dotnet watch`, or:
 
 ```bash
-docker compose logs hopper | grep "bootstrap admin key"
+docker compose logs hopper | grep "bootstrap admin key"   # try profile / production
 ```
 
-Alternatively, set `HOPPER_BOOTSTRAP_ADMIN_KEY=hjq_admin_{32 base62 chars}` in `.env`
-before the first start.
+Alternatively, set the `HOPPER_BOOTSTRAP_ADMIN_KEY` environment variable
+(`hjq_admin_{32 base62 chars}`) before the first start.
 
 Sign in at [http://localhost:8080/admin](http://localhost:8080/admin) with that key:
 

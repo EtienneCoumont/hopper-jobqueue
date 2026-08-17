@@ -72,7 +72,7 @@ jobs accumulate and flow again on **Resume**.
 Serilog writes JSON to stdout — one line per event, aggregation-friendly:
 
 ```bash
-docker compose -f compose.yaml logs -f hopper
+docker compose logs -f hopper    # from the deployment directory
 ```
 
 Authentication failures are logged at `Information` with source IP and attempted key
@@ -82,16 +82,18 @@ once, at first start — revoke it after setup.
 ## Backup and restore
 
 Daily compressed `pg_dump` (custom format) with rolling retention — 7 daily, 4 weekly.
-From a host cron:
+The scripts live in the deployment directory next to `compose.yaml` and `.env`
+(copied from the repo's `deploy/` at install time) and change to their own directory
+themselves, so a cron entry is a plain absolute path:
 
 ```cron
-0 3 * * *  cd /opt/hopper-jobqueue && ./ops/backup.sh /var/backups/hopper-jobqueue >> /var/log/hopper-backup.log 2>&1
+0 3 * * *  /opt/hopper-jobqueue/backup.sh /var/backups/hopper-jobqueue >> /var/log/hopper-backup.log 2>&1
 ```
 
 Each backup is verified readable (`pg_restore --list`) before rotation. Restore:
 
 ```bash
-./ops/restore.sh /var/backups/hopper-jobqueue/daily/hopper_YYYYMMDD_HHMMSS.dump
+/opt/hopper-jobqueue/restore.sh /var/backups/hopper-jobqueue/daily/hopper_YYYYMMDD_HHMMSS.dump
 ```
 
 The script stops the API (no connections during the operation), recreates the `hopper`
