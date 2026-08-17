@@ -23,6 +23,11 @@ read it before any evolution; everything is settled there (§14).
 - Tests: `tests/HopperJobQueue.Tests`, one sequential xUnit collection, one shared
   PostgreSQL 17 container (Testcontainers) + `WebApplicationFactory`, tables reset per
   test. The 10 scenarios of the brief's §9 are there, named `TestN_…`.
+- Docs: `README.md` is the public landing page (overview, name pun, screenshots,
+  quickstart); the detailed content required by the brief's §11 (env vars, one curl
+  per endpoint, full cycle, restore procedure) lives in `docs/` — a GitHub Pages site
+  (Jekyll Cayman, `docs/_config.yml`; enable via Settings → Pages → branch + `/docs`).
+  Screenshots and the two name illustrations are in `docs/images/`.
 
 ## Invariants (§4 of the brief — covered by tests, do not break)
 
