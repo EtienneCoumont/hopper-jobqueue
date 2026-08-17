@@ -20,6 +20,45 @@ docker compose -f compose.yaml up -d --build
 `compose.override.yaml`, the development override that publishes the port and mounts
 the source tree.
 
+The first `up` **builds the image automatically** (multi-stage Dockerfile: the .NET SDK
+is only needed *inside* the build container, not on the host; the build pulls from
+`mcr.microsoft.com` and `nuget.org`). Note that a plain `up -d` after a `git pull`
+reuses the existing image — pass `--build` to rebuild, then `up -d` recreates the
+container.
+
+## Plugging into an existing Traefik
+
+If a Traefik already runs on the host, three names in its configuration must line up
+with the compose labels — all three are overridable from `.env`:
+
+| Variable | Default | Must match |
+|---|---|---|
+| `HOPPER_TRAEFIK_NETWORK` | `traefik-public` | the Docker network your Traefik watches |
+| `HOPPER_TRAEFIK_ENTRYPOINT` | `websecure` | the HTTPS entrypoint name in its static config |
+| `HOPPER_TRAEFIK_CERTRESOLVER` | `letsencrypt` | the ACME certificate resolver name |
+
+Find the values with:
+
+```bash
+docker inspect <traefik-container> --format '{{json .NetworkSettings.Networks}}' | jq keys
+docker inspect <traefik-container> --format '{{join .Args " "}}' | tr ' ' '\n' | grep -E 'entryPoints|certificatesresolvers' -i
+```
+
+Two ways to share the network:
+
+- **Reuse Traefik's network** (recommended): set `HOPPER_TRAEFIK_NETWORK=<its-name>`
+  in `.env` — done; the network is declared `external`, compose will not create it.
+- **Keep `traefik-public`**: create it and attach your Traefik to it:
+
+  ```bash
+  docker network create traefik-public
+  docker network connect traefik-public <traefik-container>
+  ```
+
+Finally, point the DNS record for `HOPPER_PUBLIC_HOST` at the host, and put your own
+IP ranges in `HOPPER_ADMIN_IP_ALLOWLIST` — `/admin` answers `403` from anywhere else
+(that check runs in Traefik, before the application).
+
 ## Environment variables
 
 Configuration is environment-only (no config files, no secrets on disk). All variables

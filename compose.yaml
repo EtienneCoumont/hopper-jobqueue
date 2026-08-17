@@ -24,17 +24,17 @@ services:
       - hopper-internal
     labels:
       - traefik.enable=true
-      - traefik.docker.network=traefik-public
+      - traefik.docker.network=${HOPPER_TRAEFIK_NETWORK:-traefik-public}
       - traefik.http.services.hopper.loadbalancer.server.port=8080
 
       - traefik.http.routers.hopper-api.rule=Host(`${HOPPER_PUBLIC_HOST:-hopper.exemple.ch}`) && (PathPrefix(`/api`) || Path(`/healthz`) || Path(`/readyz`))
-      - traefik.http.routers.hopper-api.entrypoints=websecure
-      - traefik.http.routers.hopper-api.tls.certresolver=letsencrypt
+      - traefik.http.routers.hopper-api.entrypoints=${HOPPER_TRAEFIK_ENTRYPOINT:-websecure}
+      - traefik.http.routers.hopper-api.tls.certresolver=${HOPPER_TRAEFIK_CERTRESOLVER:-letsencrypt}
       - traefik.http.routers.hopper-api.middlewares=hopper-buffer
 
       - traefik.http.routers.hopper-admin.rule=Host(`${HOPPER_PUBLIC_HOST:-hopper.exemple.ch}`) && (PathPrefix(`/admin`) || Path(`/admin.css`))
-      - traefik.http.routers.hopper-admin.entrypoints=websecure
-      - traefik.http.routers.hopper-admin.tls.certresolver=letsencrypt
+      - traefik.http.routers.hopper-admin.entrypoints=${HOPPER_TRAEFIK_ENTRYPOINT:-websecure}
+      - traefik.http.routers.hopper-admin.tls.certresolver=${HOPPER_TRAEFIK_CERTRESOLVER:-letsencrypt}
       - traefik.http.routers.hopper-admin.middlewares=hopper-admin-allow,hopper-buffer
 
       # /admin restricted by IP — extra defence, the admin key is still required behind it.
@@ -67,6 +67,9 @@ volumes:
   hopper-pgdata:
 
 networks:
+  # Must already exist (created by your Traefik stack, or `docker network create …`).
+  # Point HOPPER_TRAEFIK_NETWORK at the network your Traefik actually uses.
   traefik-public:
     external: true
+    name: ${HOPPER_TRAEFIK_NETWORK:-traefik-public}
   hopper-internal:

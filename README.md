@@ -1,5 +1,7 @@
 # hopper-jobqueue
 
+[![License: WTFPL](https://img.shields.io/badge/License-WTFPL-brightgreen.svg)](LICENSE)
+
 **A small, self-contained HTTP job queue for workers behind NAT.**
 
 Arbitrary producers — scripts, applications, webhooks, plain `curl` — drop jobs in.
@@ -111,6 +113,10 @@ Production deployment (no published port, Traefik in front):
 docker compose -f compose.yaml up -d --build
 ```
 
+Already running a Traefik? Its network, entrypoint and cert-resolver names are three
+`.env` variables away — see
+[Deployment — plugging into an existing Traefik](docs/deployment.md#plugging-into-an-existing-traefik).
+
 ## Documentation
 
 | Page | Content |
@@ -134,3 +140,10 @@ dotnet test     # 16 integration tests against a real PostgreSQL 17 (Docker requ
 
 Stack: .NET 10 minimal API + Razor Pages, PostgreSQL 17, Npgsql + Dapper (explicit
 SQL, no ORM), DbUp migrations, Serilog JSON logs, xUnit + Testcontainers.
+
+## License
+
+[WTFPL](LICENSE) — Do What The Fuck You Want To Public License, version 2.
+
+This work is free: you can redistribute it and/or modify it under the terms of the
+WTFPL. It comes without any warranty, to the extent permitted by applicable law.
