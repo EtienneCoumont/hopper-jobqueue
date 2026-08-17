@@ -1,0 +1,54 @@
+@page "/admin/kinds"
+@model HopperJobQueue.Api.Pages.Admin.KindsModel
+@{
+    ViewData["Title"] = "Kinds";
+}
+
+<h1>Kinds (job queues)</h1>
+
+<p class="muted">A <code>kind</code> must be declared here before a producer can use it.
+   Pausing a kind suspends distribution (jobs are still accepted).</p>
+
+<section class="panel">
+    <h2>Declare a kind</h2>
+    <form method="post" asp-page-handler="Create" class="kind-form">
+        <label>Name <input type="text" name="name" required maxlength="200" placeholder="e.g. invoice-ocr" /></label>
+        <label>Description <input type="text" name="description" maxlength="500" /></label>
+        <label>Default TTL (s) <input type="number" name="defaultTtlSeconds" value="86400" min="1" max="604800" /></label>
+        <label>Max attempts <input type="number" name="defaultMaxAttempts" value="3" min="1" max="10" /></label>
+        <label>Default lease (s) <input type="number" name="defaultLeaseSeconds" value="1200" min="1" max="86400" /></label>
+        <label>Retention (days) <input type="number" name="retentionDays" value="90" min="1" max="3650" /></label>
+        <button type="submit">Create</button>
+    </form>
+</section>
+
+<section class="panel">
+    <h2>Declared kinds</h2>
+    <table>
+        <thead>
+        <tr>
+            <th>Name</th><th>Description</th><th>State</th><th>TTL</th><th>Max att.</th>
+            <th>Lease</th><th>Retention</th><th></th>
+        </tr>
+        </thead>
+        <tbody>
+        @foreach (var kind in Model.Kinds)
+        {
+            <tr class="@(kind.Enabled ? "" : "paused")">
+                <td><code>@kind.Name</code></td>
+                <td>@(kind.Description ?? "—")</td>
+                <td>@(kind.Enabled ? "active" : "paused")</td>
+                <td>@kind.DefaultTtlSeconds s</td>
+                <td>@kind.DefaultMaxAttempts</td>
+                <td>@kind.DefaultLeaseSeconds s</td>
+                <td>@kind.RetentionDays d</td>
+                <td>
+                    <form method="post" asp-page-handler="Toggle" asp-route-name="@kind.Name">
+                        <button type="submit">@(kind.Enabled ? "Pause" : "Resume")</button>
+                    </form>
+                </td>
+            </tr>
+        }
+        </tbody>
+    </table>
+</section>

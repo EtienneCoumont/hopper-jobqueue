@@ -1,0 +1,79 @@
+@page "/admin/keys"
+@model HopperJobQueue.Api.Pages.Admin.KeysModel
+@{
+    ViewData["Title"] = "API keys";
+}
+
+<h1>API keys</h1>
+
+@if (Model.CreatedKey is not null)
+{
+    <section class="panel created-key">
+        <h2>Key created</h2>
+        <p><strong>Copy this key now: it will never be shown again.</strong>
+           Only its hash is stored in the database.</p>
+        <pre class="key-block">@Model.CreatedKey</pre>
+    </section>
+}
+
+<section class="panel">
+    <h2>Create a key</h2>
+    <form method="post" asp-page-handler="Create" class="key-form">
+        <label>Name <input type="text" name="name" required maxlength="200"
+                          placeholder="e.g. scheduler-producer" /></label>
+        <label>Scope
+            <select name="scope">
+                <option value="producer">producer — enqueue and read back</option>
+                <option value="worker">worker — claim / heartbeat / complete</option>
+                <option value="admin">admin — everything + dashboard</option>
+            </select>
+        </label>
+        <fieldset>
+            <legend>Allowed kinds (allowed_kinds — not applicable to admin)</legend>
+            @if (Model.Kinds.Count == 0)
+            {
+                <p class="muted">No kind declared. <a href="/admin/kinds">Declare a kind first.</a></p>
+            }
+            @foreach (var kind in Model.Kinds)
+            {
+                <label class="checkbox"><input type="checkbox" name="allowedKinds" value="@kind.Name" /> @kind.Name</label>
+            }
+        </fieldset>
+        <button type="submit">Create</button>
+    </form>
+    <p class="muted">One key per producer and per worker — never shared: that is what
+       makes targeted revocation possible.</p>
+</section>
+
+<section class="panel">
+    <h2>Existing keys</h2>
+    <table>
+        <thead>
+        <tr>
+            <th>Name</th><th>Prefix</th><th>Scope</th><th>Allowed kinds</th>
+            <th>Last used</th><th>State</th><th></th>
+        </tr>
+        </thead>
+        <tbody>
+        @foreach (var key in Model.Keys)
+        {
+            <tr class="@(key.RevokedAt is not null ? "revoked" : "")">
+                <td>@key.Name</td>
+                <td><code>@key.Prefix…</code></td>
+                <td>@key.Scope</td>
+                <td>@(key.AllowedKinds.Length == 0 ? "—" : string.Join(", ", key.AllowedKinds))</td>
+                <td>@(key.LastUsedAt?.ToString("yyyy-MM-dd HH:mm") ?? "never")</td>
+                <td>@(key.RevokedAt is null ? "active" : $"revoked on {key.RevokedAt:yyyy-MM-dd}")</td>
+                <td>
+                    @if (key.RevokedAt is null)
+                    {
+                        <form method="post" asp-page-handler="Revoke" asp-route-id="@key.Id">
+                            <button type="submit" class="danger">Revoke</button>
+                        </form>
+                    }
+                </td>
+            </tr>
+        }
+        </tbody>
+    </table>
+</section>

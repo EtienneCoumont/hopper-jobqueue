@@ -1,0 +1,18 @@
+# Development override: applied automatically by `docker compose up`.
+# Publishes the port on the host and hot-mounts the code (dotnet watch).
+# In production, deploy with:  docker compose -f compose.yaml up -d
+
+services:
+  hopper:
+    image: mcr.microsoft.com/dotnet/sdk:10.0
+    build: !reset null
+    working_dir: /workspace
+    command: dotnet watch --project src/HopperJobQueue.Api run --urls http://+:8080
+    ports:
+      - "8080:8080"
+    volumes:
+      - .:/workspace
+      - hopper-nuget:/root/.nuget/packages
+
+volumes:
+  hopper-nuget:

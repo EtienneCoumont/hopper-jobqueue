@@ -1,0 +1,222 @@
+/* hopper-jobqueue — admin dashboard. Hand-written CSS, no framework, no build step. */
+
+:root {
+    --bg: #f5f6f8;
+    --panel: #ffffff;
+    --ink: #1d232a;
+    --muted: #6b7280;
+    --line: #d9dde3;
+    --accent: #145a8a;
+    --danger: #a4262c;
+    --ok: #1d7a3a;
+}
+
+* { box-sizing: border-box; }
+
+body {
+    margin: 0;
+    background: var(--bg);
+    color: var(--ink);
+    font: 15px/1.45 system-ui, -apple-system, "Segoe UI", sans-serif;
+}
+
+.topbar {
+    display: flex;
+    align-items: center;
+    gap: 1.5rem;
+    background: #10344e;
+    color: #fff;
+    padding: 0.55rem 1.25rem;
+}
+
+.topbar .brand { font-weight: 700; letter-spacing: 0.02em; }
+
+.topbar nav { display: flex; gap: 1rem; flex: 1; }
+
+.topbar a { color: #cfe3f2; text-decoration: none; }
+.topbar a:hover { color: #fff; text-decoration: underline; }
+
+.logout-form { margin: 0; }
+
+.link-button {
+    background: none;
+    border: none;
+    color: #cfe3f2;
+    cursor: pointer;
+    font: inherit;
+    padding: 0;
+    text-decoration: underline;
+}
+
+main { max-width: 1200px; margin: 0 auto; padding: 1.25rem; }
+
+h1 { font-size: 1.45rem; margin: 0.25rem 0 1rem; }
+h2 { font-size: 1.05rem; margin: 0 0 0.75rem; }
+
+code { background: #eef1f4; padding: 0.05rem 0.3rem; border-radius: 3px; font-size: 0.92em; }
+
+.muted { color: var(--muted); }
+.error { color: var(--danger); font-weight: 600; }
+
+table { width: 100%; border-collapse: collapse; background: var(--panel); }
+
+th, td {
+    text-align: left;
+    padding: 0.45rem 0.6rem;
+    border-bottom: 1px solid var(--line);
+    vertical-align: top;
+}
+
+th { font-size: 0.8rem; text-transform: uppercase; letter-spacing: 0.04em; color: var(--muted); }
+
+tr.revoked td, tr.paused td { color: var(--muted); }
+
+.panel {
+    background: var(--panel);
+    border: 1px solid var(--line);
+    border-radius: 6px;
+    padding: 1rem 1.25rem;
+    margin-bottom: 1.25rem;
+}
+
+.panel-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+    gap: 1.25rem;
+}
+
+.stat-grid {
+    display: grid;
+    grid-template-columns: repeat(6, 1fr);
+    gap: 0.75rem;
+    margin-bottom: 1.25rem;
+}
+
+.stat-card {
+    background: var(--panel);
+    border: 1px solid var(--line);
+    border-left: 4px solid var(--muted);
+    border-radius: 6px;
+    padding: 0.6rem 0.8rem;
+    display: flex;
+    flex-direction: column;
+}
+
+.stat-value { font-size: 1.6rem; font-weight: 700; }
+.stat-label { color: var(--muted); font-size: 0.85rem; }
+
+.stat-card.status-pending { border-left-color: #b7791f; }
+.stat-card.status-leased { border-left-color: var(--accent); }
+.stat-card.status-done { border-left-color: var(--ok); }
+.stat-card.status-failed { border-left-color: var(--danger); }
+.stat-card.status-expired { border-left-color: #8a5a9e; }
+.stat-card.status-cancelled { border-left-color: var(--muted); }
+
+.badge {
+    display: inline-block;
+    padding: 0.05rem 0.5rem;
+    border-radius: 9px;
+    font-size: 0.8rem;
+    font-weight: 600;
+    color: #fff;
+    background: var(--muted);
+}
+
+.badge.status-pending { background: #b7791f; }
+.badge.status-leased { background: var(--accent); }
+.badge.status-done { background: var(--ok); }
+.badge.status-failed { background: var(--danger); }
+.badge.status-expired { background: #8a5a9e; }
+.badge.status-cancelled { background: var(--muted); }
+
+dl { display: grid; grid-template-columns: max-content 1fr; gap: 0.3rem 1rem; margin: 0; }
+dt { color: var(--muted); }
+dd { margin: 0; }
+
+.filters {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.75rem;
+    align-items: end;
+    background: var(--panel);
+    border: 1px solid var(--line);
+    border-radius: 6px;
+    padding: 0.75rem 1rem;
+    margin-bottom: 1rem;
+}
+
+.filters label { display: flex; flex-direction: column; gap: 0.2rem; font-size: 0.85rem; color: var(--muted); }
+
+input[type="text"], input[type="password"], input[type="number"], select {
+    border: 1px solid var(--line);
+    border-radius: 4px;
+    padding: 0.35rem 0.5rem;
+    font: inherit;
+    color: var(--ink);
+    background: #fff;
+}
+
+button {
+    border: 1px solid var(--accent);
+    background: var(--accent);
+    color: #fff;
+    border-radius: 4px;
+    padding: 0.35rem 0.8rem;
+    font: inherit;
+    cursor: pointer;
+}
+
+button:hover { filter: brightness(1.1); }
+
+button.danger { background: var(--danger); border-color: var(--danger); }
+
+.actions { display: flex; gap: 0.4rem; }
+.actions form { margin: 0; }
+
+.jobs-table td { white-space: nowrap; }
+.jobs-table td.actions { white-space: normal; }
+
+.pager { display: flex; gap: 1rem; margin: 1rem 0; }
+
+.json-block, .error-block, .key-block {
+    background: #f0f3f6;
+    border: 1px solid var(--line);
+    border-radius: 4px;
+    padding: 0.75rem;
+    overflow-x: auto;
+    white-space: pre-wrap;
+    word-break: break-word;
+    font-family: ui-monospace, "Cascadia Mono", Consolas, monospace;
+    font-size: 0.85rem;
+    margin: 0;
+}
+
+.error-block { border-left: 4px solid var(--danger); }
+
+.created-key { border-left: 4px solid var(--ok); }
+.key-block { font-size: 1rem; user-select: all; }
+
+details summary { cursor: pointer; color: var(--accent); margin-bottom: 0.5rem; }
+
+.key-form, .kind-form { display: flex; flex-wrap: wrap; gap: 0.75rem; align-items: end; }
+.key-form label, .kind-form label { display: flex; flex-direction: column; gap: 0.2rem; font-size: 0.85rem; color: var(--muted); }
+
+fieldset { border: 1px solid var(--line); border-radius: 4px; }
+legend { font-size: 0.8rem; color: var(--muted); }
+label.checkbox { flex-direction: row; align-items: center; gap: 0.35rem; display: flex; }
+
+.login-card {
+    max-width: 430px;
+    margin: 4rem auto;
+    background: var(--panel);
+    border: 1px solid var(--line);
+    border-radius: 6px;
+    padding: 1.5rem;
+}
+
+.login-card form { display: flex; flex-direction: column; gap: 0.6rem; }
+
+.job-actions { display: flex; gap: 0.6rem; margin-bottom: 1rem; }
+.job-actions form { margin: 0; }
+
+time { color: inherit; }

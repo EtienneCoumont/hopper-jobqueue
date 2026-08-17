@@ -1,0 +1,59 @@
+@page "/admin"
+@model HopperJobQueue.Api.Pages.Admin.IndexModel
+@{
+    ViewData["Title"] = "Overview";
+}
+@section Head {
+    <meta http-equiv="refresh" content="30" />
+}
+
+<h1>Overview</h1>
+
+<div class="stat-grid">
+    @foreach (var status in JobStatus.All)
+    {
+        <div class="stat-card status-@status">
+            <span class="stat-value">@(Model.Stats.CountsByStatus.GetValueOrDefault(status))</span>
+            <span class="stat-label">@status</span>
+        </div>
+    }
+</div>
+
+<div class="panel-grid">
+    <section class="panel">
+        <h2>Queue</h2>
+        <dl>
+            <dt>Oldest <code>pending</code> age</dt>
+            <dd>@(Model.OldestPending ?? "—")</dd>
+            <dt>Jobs received (24 h)</dt>
+            <dd>@Model.Stats.Enqueued24h</dd>
+            <dt>Finished <code>done</code> (24 h)</dt>
+            <dd>@Model.Stats.Done24h</dd>
+            <dt>Finished <code>failed</code> (24 h)</dt>
+            <dd>@Model.Stats.Failed24h</dd>
+        </dl>
+    </section>
+
+    <section class="panel">
+        <h2>Latest activity per worker</h2>
+        @if (Model.Stats.Workers.Count == 0)
+        {
+            <p class="muted">No worker activity recorded.</p>
+        }
+        else
+        {
+            <table>
+                <thead><tr><th>Worker</th><th>Last seen</th></tr></thead>
+                <tbody>
+                @foreach (var worker in Model.Stats.Workers)
+                {
+                    <tr>
+                        <td>@worker.Actor</td>
+                        <td><time datetime="@worker.LastSeenAt.ToString("O")">@worker.LastSeenAt.ToString("yyyy-MM-dd HH:mm:ss") UTC</time></td>
+                    </tr>
+                }
+                </tbody>
+            </table>
+        }
+    </section>
+</div>

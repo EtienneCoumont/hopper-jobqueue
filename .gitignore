@@ -1,0 +1,17 @@
+# Build
+bin/
+obj/
+*.user
+
+# Local config — never any secret in the repository
+appsettings.Development.json
+launchSettings.json
+.env
+
+# Local backups
+backups/
+
+# IDE
+.vs/
+.idea/
+*.swp

@@ -1,0 +1,8 @@
+<Solution>
+  <Folder Name="/src/">
+    <Project Path="src/HopperJobQueue.Api/HopperJobQueue.Api.csproj" />
+  </Folder>
+  <Folder Name="/tests/">
+    <Project Path="tests/HopperJobQueue.Tests/HopperJobQueue.Tests.csproj" />
+  </Folder>
+</Solution>

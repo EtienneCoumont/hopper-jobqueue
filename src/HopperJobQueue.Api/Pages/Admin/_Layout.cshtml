@@ -1,0 +1,30 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>@(ViewData["Title"] is string t ? t + " — " : "")Hopper</title>
+    <link rel="stylesheet" href="/admin.css" />
+    @RenderSection("Head", required: false)
+</head>
+<body>
+<header class="topbar">
+    <span class="brand">hopper-jobqueue</span>
+    @if (User.Identity?.IsAuthenticated == true)
+    {
+        <nav>
+            <a href="/admin">Overview</a>
+            <a href="/admin/jobs">Jobs</a>
+            <a href="/admin/kinds">Kinds</a>
+            <a href="/admin/keys">Keys</a>
+        </nav>
+        <form method="post" asp-page="/Admin/Login" asp-page-handler="Logout" class="logout-form">
+            <button type="submit" class="link-button">Sign out (@User.Identity.Name)</button>
+        </form>
+    }
+</header>
+<main>
+    @RenderBody()
+</main>
+</body>
+</html>
