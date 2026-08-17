@@ -1,0 +1,13 @@
+.git
+.github
+bin
+obj
+**/bin
+**/obj
+docs
+deploy
+tests
+backups
+*.md
+.env
+.env.*

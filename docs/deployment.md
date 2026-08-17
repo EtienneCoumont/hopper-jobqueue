@@ -10,21 +10,74 @@ Target: one Docker host running Traefik. The service container publishes **no po
 Traefik reaches it over the `traefik-public` Docker network. PostgreSQL lives on the
 internal `hopper-internal` network and is never exposed anywhere.
 
-```bash
-docker network create traefik-public        # if Traefik has not created it already
-cp .env.example .env                        # fill in the variables below
-docker compose -f compose.yaml up -d --build
+## The deployment artifact
+
+Production needs **no git checkout and no build**: everything the server runs is
+described by `deploy/compose.yaml`, a self-contained file that pulls the CI-built
+image from GHCR. Copy it into a deployment directory next to a filled-in `.env`
+(plus, optionally, the backup/restore scripts), and every command is plain
+`docker compose <cmd>` from that directory:
+
+```
+/opt/hopper-jobqueue/
+├── compose.yaml    ← deploy/compose.yaml from the repo
+├── .env            ← from deploy/.env.example
+├── backup.sh       ← optional
+└── restore.sh      ← optional
 ```
 
-**Always pass `-f compose.yaml` in production.** Without it Docker Compose also applies
-`compose.override.yaml`, the development override that publishes the port and mounts
-the source tree.
+```bash
+mkdir -p /opt/hopper-jobqueue && cd /opt/hopper-jobqueue
+BASE=https://raw.githubusercontent.com/EtienneCoumont/hopper-jobqueue/main/deploy
+curl -fsSO $BASE/compose.yaml
+curl -fsS  $BASE/.env.example -o .env      # then fill in the variables below
+curl -fsSO $BASE/backup.sh && curl -fsSO $BASE/restore.sh && chmod +x backup.sh restore.sh
+docker network create traefik-public        # skip if your Traefik already provides one
+docker compose up -d
+```
 
-The first `up` **builds the image automatically** (multi-stage Dockerfile: the .NET SDK
-is only needed *inside* the build container, not on the host; the build pulls from
-`mcr.microsoft.com` and `nuget.org`). Note that a plain `up -d` after a `git pull`
-reuses the existing image — pass `--build` to rebuild, then `up -d` recreates the
-container.
+The compose file pins the project name (`name: hopper-jobqueue`), so containers,
+networks and the `hopper-pgdata` volume keep stable names wherever the directory
+lives. The development compose file at the repo root plays no role in production —
+there is no override mechanism to guard against.
+
+## The image comes from GHCR
+
+On every push to `main`, the
+[docker workflow](https://github.com/EtienneCoumont/hopper-jobqueue/actions/workflows/docker.yml)
+runs the full integration test suite, builds the multi-stage Dockerfile and publishes
+`ghcr.io/etiennecoumont/hopper-jobqueue` with three kinds of tags:
+
+| Tag | Meaning |
+|---|---|
+| `latest` | follows `main` (the default the compose file pulls) |
+| `X.Y.Z` | published when a `vX.Y.Z` git tag is pushed |
+| `sha-<commit>` | immutable, one per build — for pinning and rollbacks |
+
+Pin a tag on the server with `HOPPER_IMAGE_TAG` in `.env`
+(e.g. `HOPPER_IMAGE_TAG=sha-abc1234`), then `docker compose up -d`. Rolling back is
+the same operation with the previous tag.
+
+Updating a deployment:
+
+```bash
+cd /opt/hopper-jobqueue
+docker compose pull
+docker compose up -d
+```
+
+The copied `compose.yaml` itself changes rarely; when a release notes that it did,
+re-`curl` it the same way as at install time.
+
+**Package visibility**: the first publish creates the GHCR package as *private*. Either
+make it public once (package page → settings → change visibility — the code is WTFPL
+anyway), or keep it private and authenticate the server:
+`docker login ghcr.io -u <user>` with a personal access token carrying the
+`read:packages` scope.
+
+To build the image without CI (air-gapped use):
+`docker build -t ghcr.io/etiennecoumont/hopper-jobqueue:latest .` from a checkout —
+the .NET SDK is only needed inside the build container.
 
 ## Plugging into an existing Traefik
 
@@ -73,6 +126,7 @@ are prefixed `HOPPER_`; compose assembles the connection string for you.
 | `HOPPER_BOOTSTRAP_ADMIN_KEY` | optional fixed bootstrap admin key (`hjq_admin_{32 base62}`) |
 | `HOPPER_LOG_LEVEL` | `Verbose` … `Error`, default `Information` |
 | `HOPPER_SWEEP_INTERVAL_SECONDS` | sweeper period, default `60` |
+| `HOPPER_IMAGE_TAG` | image tag to pull from GHCR (`latest`, `X.Y.Z`, `sha-<commit>`), default `latest` |
 
 ## TLS and proxy headers
 
