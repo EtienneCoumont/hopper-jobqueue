@@ -6,7 +6,7 @@ namespace HopperJobQueue.Api.Infrastructure;
 
 public static class DatabaseMigrator
 {
-    // Identifiant arbitraire mais fixe : deux instances qui migrent en même temps se sérialisent.
+    // Arbitrary but fixed identifier: two instances migrating at the same time serialize.
     private const long AdvisoryLockId = 727_001_942;
 
     public static void Run(string connectionString, ILogger logger)
@@ -21,7 +21,7 @@ public static class DatabaseMigrator
 
         try
         {
-            // Le journal DbUp vit dans le schéma jobqueue ; il doit exister avant la première migration.
+            // The DbUp journal lives in the jobqueue schema; it must exist before the first migration.
             using (var cmd = new NpgsqlCommand("create schema if not exists jobqueue", lockConnection))
             {
                 cmd.ExecuteNonQuery();

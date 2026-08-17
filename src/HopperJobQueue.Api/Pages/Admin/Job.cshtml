@@ -10,36 +10,36 @@
     @if (Model.Job.Status is JobStatus.Failed or JobStatus.Expired or JobStatus.Cancelled)
     {
         <form method="post" asp-page-handler="Requeue">
-            <button type="submit">Requeue (remet en pending, tentatives à zéro)</button>
+            <button type="submit">Requeue (back to pending, attempts reset)</button>
         </form>
     }
     @if (Model.Job.Status is JobStatus.Pending or JobStatus.Leased)
     {
         <form method="post" asp-page-handler="Cancel">
-            <button type="submit" class="danger">Annuler</button>
+            <button type="submit" class="danger">Cancel</button>
         </form>
     }
 </div>
 
 <section class="panel">
-    <h2>Détails</h2>
+    <h2>Details</h2>
     <dl class="job-details">
-        <dt>Clé d'idempotence</dt><dd><code>@Model.Job.IdempotencyKey</code></dd>
-        <dt>File (kind)</dt><dd>@Model.Job.Kind</dd>
-        <dt>Projet</dt><dd>@(Model.Job.Project ?? "—")</dd>
-        <dt>Tentatives</dt><dd>@Model.Job.Attempts / @Model.Job.MaxAttempts</dd>
+        <dt>Idempotency key</dt><dd><code>@Model.Job.IdempotencyKey</code></dd>
+        <dt>Kind (queue)</dt><dd>@Model.Job.Kind</dd>
+        <dt>Project</dt><dd>@(Model.Job.Project ?? "—")</dd>
+        <dt>Attempts</dt><dd>@Model.Job.Attempts / @Model.Job.MaxAttempts</dd>
         <dt>Worker</dt><dd>@(Model.Job.WorkerId ?? "—")</dd>
-        <dt>Créé</dt><dd>@Model.Job.CreatedAt.ToString("yyyy-MM-dd HH:mm:ss") UTC</dd>
-        <dt>Expire</dt><dd>@Model.Job.ExpiresAt.ToString("yyyy-MM-dd HH:mm:ss") UTC</dd>
-        <dt>Bail jusqu'à</dt><dd>@(Model.Job.LeaseUntil?.ToString("yyyy-MM-dd HH:mm:ss") is string lu ? lu + " UTC" : "—")</dd>
-        <dt>Terminé</dt><dd>@(Model.Job.FinishedAt?.ToString("yyyy-MM-dd HH:mm:ss") is string fa ? fa + " UTC" : "—")</dd>
+        <dt>Created</dt><dd>@Model.Job.CreatedAt.ToString("yyyy-MM-dd HH:mm:ss") UTC</dd>
+        <dt>Expires</dt><dd>@Model.Job.ExpiresAt.ToString("yyyy-MM-dd HH:mm:ss") UTC</dd>
+        <dt>Lease until</dt><dd>@(Model.Job.LeaseUntil?.ToString("yyyy-MM-dd HH:mm:ss") is string lu ? lu + " UTC" : "—")</dd>
+        <dt>Finished</dt><dd>@(Model.Job.FinishedAt?.ToString("yyyy-MM-dd HH:mm:ss") is string fa ? fa + " UTC" : "—")</dd>
     </dl>
 </section>
 
 @if (Model.Job.LastError is not null)
 {
     <section class="panel">
-        <h2>Dernière erreur</h2>
+        <h2>Last error</h2>
         <pre class="error-block">@Model.Job.LastError</pre>
     </section>
 }
@@ -47,7 +47,7 @@
 <section class="panel">
     <h2>Payload</h2>
     <details open>
-        <summary>JSON (@Model.PayloadPretty.Length car.)</summary>
+        <summary>JSON (@Model.PayloadPretty.Length chars)</summary>
         <pre class="json-block">@Model.PayloadPretty</pre>
     </details>
 </section>
@@ -55,9 +55,9 @@
 @if (Model.ResultPretty is not null)
 {
     <section class="panel">
-        <h2>Résultat</h2>
+        <h2>Result</h2>
         <details open>
-            <summary>JSON (@Model.ResultPretty.Length car.)</summary>
+            <summary>JSON (@Model.ResultPretty.Length chars)</summary>
             <pre class="json-block">@Model.ResultPretty</pre>
         </details>
     </section>
@@ -66,7 +66,7 @@
 <section class="panel">
     <h2>Timeline</h2>
     <table>
-        <thead><tr><th>Quand</th><th>Transition</th><th>Acteur</th><th>Note</th></tr></thead>
+        <thead><tr><th>When</th><th>Transition</th><th>Actor</th><th>Note</th></tr></thead>
         <tbody>
         @foreach (var evt in Model.Events)
         {

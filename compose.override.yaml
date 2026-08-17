@@ -1,6 +1,6 @@
-# Surcharge de développement : appliquée automatiquement par `docker compose up`.
-# Publie le port sur l'hôte et monte le code à chaud (dotnet watch).
-# En production, déployer avec :  docker compose -f compose.yaml up -d
+# Development override: applied automatically by `docker compose up`.
+# Publishes the port on the host and hot-mounts the code (dotnet watch).
+# In production, deploy with:  docker compose -f compose.yaml up -d
 
 services:
   hopper:

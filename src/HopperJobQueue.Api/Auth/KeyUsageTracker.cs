@@ -3,9 +3,9 @@ using System.Collections.Concurrent;
 namespace HopperJobQueue.Api.Auth;
 
 /// <summary>
-/// Tampon en mémoire pour <c>last_used_at</c> : les usages sont notés ici à chaque requête
-/// authentifiée et écrits en base au plus une fois par minute par la tâche de fond — jamais
-/// un update par requête sur le chemin chaud du polling.
+/// In-memory buffer for <c>last_used_at</c>: usages are recorded here on every
+/// authenticated request and written to the database at most once per minute by the
+/// background task — never one update per request on the hot polling path.
 /// </summary>
 public sealed class KeyUsageTracker
 {

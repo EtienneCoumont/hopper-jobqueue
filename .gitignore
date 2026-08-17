@@ -3,12 +3,12 @@ bin/
 obj/
 *.user
 
-# Config locale — jamais de secret dans le dépôt
+# Local config — never any secret in the repository
 appsettings.Development.json
 launchSettings.json
 .env
 
-# Sauvegardes locales
+# Local backups
 backups/
 
 # IDE

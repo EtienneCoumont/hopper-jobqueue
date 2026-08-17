@@ -1,114 +1,114 @@
 # Brief — HopperJobQueue
 
-Petit service HTTP autonome qui sert de file de travaux entre des **producteurs quelconques**
-et un ou plusieurs workers qui tournent sur des machines derrière NAT.
+Small self-contained HTTP service acting as a work queue between **arbitrary producers**
+and one or more workers running on machines behind NAT.
 
-Le worker ne peut faire que des appels HTTPS **sortants** : c'est la contrainte qui dicte
-toute l'architecture. Pas de socket entrant, pas d'accès direct à la base, pas de tunnel.
-
----
-
-## 1. Rôle et périmètre
-
-Le service ne fait que trois choses :
-
-1. Accepter des jobs de **n'importe quel producteur**, de manière idempotente.
-2. Les distribuer à un worker qui vient les chercher, avec une sémantique de **bail**
-   (lease) : un job réservé et jamais rendu redevient disponible tout seul.
-3. Conserver l'historique et l'exposer dans un petit dashboard pour le contrôle manuel.
-
-### Le service est agnostique — point structurant
-
-Le premier producteur sera une instance n8n, mais **n8n n'est qu'un producteur parmi
-d'autres** et le service ne doit rien savoir de lui. Sont également attendus, sans que le
-code change : des scripts shell ou PowerShell, des jobs planifiés, une application ASP.NET,
-un webhook GitHub, un appel `curl` à la main depuis un poste.
-
-Conséquences à respecter à la lettre :
-
-- **Aucune mention de n8n, de Gmail ou de courrier électronique** dans le code, les noms de
-  types, les colonnes, les messages d'erreur ou la documentation d'API. Le domaine métier
-  est entièrement porté par `kind` et `payload`, que le service traite comme opaques.
-- Les exemples de ce brief (`kind: "project-preanalysis"`, `idempotencyKey: "gmail:…"`, un
-  payload contenant un sujet et un expéditeur) sont **des illustrations, pas un schéma**. Ne
-  jamais typer le payload ni valider ses champs internes.
-- Le seul contrat imposé au producteur est de fournir une clé d'idempotence stable dont il
-  garde la maîtrise. Un préfixe par producteur (`gmail:…`, `github:…`, `cron:…`) est une
-  bonne pratique à documenter, pas une règle à valider côté serveur.
-- Chaque producteur a **sa propre clé API**, avec ses propres `allowed_kinds`. Deux
-  producteurs ne partagent jamais une clé : c'est ce qui rend une révocation ciblée possible.
-
-### Hors périmètre — ne pas implémenter
-
-- Pas d'exécution de travail dans ce service. Il ne lance aucun processus, aucun agent,
-  aucune analyse. Il stocke et distribue, rien d'autre.
-- Pas de multi-tenant, pas de notion d'organisation ou d'utilisateur.
-- Pas de priorités, pas de jobs planifiés, pas de dépendances entre jobs.
-- Pas de WebSocket ni de SSE. Le worker fait du polling, c'est voulu.
-- **Pas de callback HTTP sortant.** Le service n'appelle jamais rien vers l'extérieur : ni
-  webhook de fin de job, ni notification. Les producteurs relisent l'état par
-  `GET /jobs/{id}`. Cela évite la gestion des relances, des délais d'attente et le risque de
-  SSRF, pour un bénéfice que le polling couvre déjà.
-- Pas de contenu de mail en base. Le payload ne contient que des métadonnées et des
-  identifiants (voir §5).
-- Pas d'ORM lourd, pas de découpage en couches spéculatif, pas de médiateur type MediatR.
-
-Si une fonctionnalité semble manquer, **demander avant de l'ajouter**.
+The worker can only make **outbound** HTTPS calls: that constraint dictates the entire
+architecture. No inbound socket, no direct database access, no tunnel.
 
 ---
 
-## 2. Nommage — à respecter tel quel
+## 1. Role and scope
 
-Tous les identifiants dérivent du nom du service. Ne pas en inventer de variantes.
+The service does only three things:
 
-| Élément | Valeur |
+1. Accept jobs from **any producer**, idempotently.
+2. Hand them to a worker that comes to fetch them, with **lease** semantics: a job that
+   was reserved and never returned becomes available again on its own.
+3. Keep the history and expose it in a small dashboard for manual control.
+
+### The service is agnostic — structural point
+
+The first producer will be an n8n instance, but **n8n is just one producer among
+others** and the service must know nothing about it. Also expected, without any code
+change: shell or PowerShell scripts, scheduled jobs, an ASP.NET application, a GitHub
+webhook, a manual `curl` call from a workstation.
+
+Consequences to follow to the letter:
+
+- **No mention of n8n, Gmail or e-mail** in the code, type names, columns, error
+  messages or API documentation. The business domain is carried entirely by `kind` and
+  `payload`, which the service treats as opaque.
+- The examples in this brief (`kind: "project-preanalysis"`, `idempotencyKey: "gmail:…"`,
+  a payload containing a subject and a sender) are **illustrations, not a schema**. Never
+  type the payload nor validate its inner fields.
+- The only contract imposed on the producer is to provide a stable idempotency key that
+  it controls. A per-producer prefix (`gmail:…`, `github:…`, `cron:…`) is a good practice
+  to document, not a rule to validate server-side.
+- Each producer has **its own API key**, with its own `allowed_kinds`. Two producers
+  never share a key: that is what makes targeted revocation possible.
+
+### Out of scope — do not implement
+
+- No work execution in this service. It launches no process, no agent, no analysis. It
+  stores and distributes, nothing else.
+- No multi-tenant, no notion of organisation or user.
+- No priorities, no scheduled jobs, no dependencies between jobs.
+- No WebSocket or SSE. The worker polls; that is intentional.
+- **No outbound HTTP callback.** The service never calls anything external: no
+  end-of-job webhook, no notification. Producers re-read state via `GET /jobs/{id}`.
+  This avoids retry management, timeouts and SSRF risk, for a benefit that polling
+  already covers.
+- No mail content in the database. The payload contains only metadata and identifiers
+  (see §5).
+- No heavy ORM, no speculative layering, no MediatR-style mediator.
+
+If a feature seems to be missing, **ask before adding it**.
+
+---
+
+## 2. Naming — use as-is
+
+All identifiers derive from the service name. Do not invent variants.
+
+| Element | Value |
 |---|---|
-| Dépôt Git | `hopper-jobqueue` |
-| Solution / namespace racine | `HopperJobQueue` |
-| Projets | `HopperJobQueue.Api`, `HopperJobQueue.Tests` |
-| Image Docker | `hopper-jobqueue` |
-| Services `compose` | `hopper` (API), `hopper-db` (PostgreSQL) |
-| Volume Docker | `hopper-pgdata` |
-| Réseaux Docker | `traefik-public`, `hopper-internal` |
-| Base PostgreSQL | `hopper` |
-| Schéma PostgreSQL | `jobqueue` |
-| Préfixe des variables d'env. | `HOPPER_` |
-| Préfixe des clés API | `hjq_` |
-| Routeurs Traefik | `hopper-api`, `hopper-admin` |
-| Hôte (exemple) | `hopper.exemple.ch` |
+| Git repository | `hopper-jobqueue` |
+| Solution / root namespace | `HopperJobQueue` |
+| Projects | `HopperJobQueue.Api`, `HopperJobQueue.Tests` |
+| Docker image | `hopper-jobqueue` |
+| `compose` services | `hopper` (API), `hopper-db` (PostgreSQL) |
+| Docker volume | `hopper-pgdata` |
+| Docker networks | `traefik-public`, `hopper-internal` |
+| PostgreSQL database | `hopper` |
+| PostgreSQL schema | `jobqueue` |
+| Env variable prefix | `HOPPER_` |
+| API key prefix | `hjq_` |
+| Traefik routers | `hopper-api`, `hopper-admin` |
+| Host (example) | `hopper.exemple.ch` |
 
-Base `hopper` + schéma `jobqueue` : le nom qualifié `jobqueue.jobs` reste explicite dans les
-requêtes, et le schéma dédié laisse la place à d'autres schémas dans la même instance si le
-besoin apparaît.
+Database `hopper` + schema `jobqueue`: the qualified name `jobqueue.jobs` stays explicit
+in queries, and the dedicated schema leaves room for other schemas in the same instance
+if the need arises.
 
 ---
 
-## 3. Stack imposée
+## 3. Imposed stack
 
-| Choix | Valeur | Pourquoi |
+| Choice | Value | Why |
 |---|---|---|
-| Runtime | .NET 10, minimal API, C# | environnement existant |
-| Base | PostgreSQL 17 | conteneur dédié à ce service, schéma `jobqueue` |
-| Accès données | Npgsql + Dapper | une table et demie, l'ORM n'apporte rien |
-| Migrations | scripts SQL numérotés + DbUp | déterministe, lisible, pas de magie |
-| Dashboard | Razor Pages, rendu serveur | zéro build front, zéro npm |
-| Logs | `Microsoft.Extensions.Logging` + Serilog console en JSON | agrégation simple |
-| Tests | xUnit + Testcontainers.PostgreSql | les tests de concurrence exigent une vraie base |
+| Runtime | .NET 10, minimal API, C# | existing environment |
+| Database | PostgreSQL 17 | container dedicated to this service, schema `jobqueue` |
+| Data access | Npgsql + Dapper | one and a half tables, an ORM brings nothing |
+| Migrations | numbered SQL scripts + DbUp | deterministic, readable, no magic |
+| Dashboard | Razor Pages, server-rendered | zero front-end build, zero npm |
+| Logs | `Microsoft.Extensions.Logging` + Serilog JSON console | simple aggregation |
+| Tests | xUnit + Testcontainers.PostgreSql | concurrency tests require a real database |
 
-Contraintes :
+Constraints:
 
-- Aucune dépendance NuGet en dehors de cette liste sans validation préalable.
-- Tous les timestamps sont en UTC, colonnes `timestamptz`, `DateTimeOffset` en C#.
-- Configuration par variables d'environnement uniquement (pas de secrets en fichier).
-- Le service tourne derrière Traefik, qui termine TLS. Ne pas gérer de certificat, ne pas
-  activer `UseHttpsRedirection` ni HSTS, et configurer `ForwardedHeadersOptions` selon le
-  §13 — la configuration par défaut ne marche pas en Docker.
+- No NuGet dependency outside this list without prior validation.
+- All timestamps in UTC, `timestamptz` columns, `DateTimeOffset` in C#.
+- Configuration through environment variables only (no secrets in files).
+- The service runs behind Traefik, which terminates TLS. Do not manage certificates, do
+  not enable `UseHttpsRedirection` or HSTS, and configure `ForwardedHeadersOptions` as
+  per §13 — the default configuration does not work in Docker.
 
 ---
 
-## 4. Modèle de données
+## 4. Data model
 
-Schéma `jobqueue`. Migration initiale :
+Schema `jobqueue`. Initial migration:
 
 ```sql
 create schema if not exists jobqueue;
@@ -174,94 +174,96 @@ create table jobqueue.job_events (
 create index job_events_job_idx on jobqueue.job_events (job_id, at);
 ```
 
-`job_events` est la piste d'audit : **toute** transition d'état y écrit une ligne, dans la
-même transaction que la mise à jour de `jobs`. C'est ce qui rend le dashboard utile et les
-incidents diagnosticables.
+`job_events` is the audit trail: **every** state transition writes a row there, in the
+same transaction as the `jobs` update. That is what makes the dashboard useful and
+incidents diagnosable.
 
-### Machine à états
+### State machine
 
 ```
 pending  ──claim──▶  leased  ──complete(ok)──▶  done
    ▲                    │
-   │                    ├──complete(erreur), attempts < max──▶  pending
-   │                    ├──complete(erreur), attempts >= max─▶  failed
-   │                    └──bail expiré, attempts < max────────▶  pending  (implicite)
+   │                    ├──complete(error), attempts < max──▶  pending
+   │                    ├──complete(error), attempts >= max─▶  failed
+   │                    └──lease expired, attempts < max──────▶  pending  (implicit)
    │                                                                │
    └──────────────── requeue (admin) ◀──── failed / expired ─────────┘
 
-pending / leased  ──expires_at dépassé──▶  expired   (balayeur)
+pending / leased  ──expires_at exceeded──▶  expired   (sweeper)
 pending / leased  ──cancel (admin)─────▶  cancelled
 ```
 
-Règles invariantes, à couvrir par des tests :
+Invariant rules, to be covered by tests:
 
-- Un job en `done` ou `cancelled` est terminal : aucune transition n'en sort sauf `requeue`
-  explicite depuis le dashboard, et jamais depuis `done`.
-- `attempts` s'incrémente **au claim**, pas au complete. Un worker qui crashe sans rien
-  renvoyer consomme donc une tentative — c'est la protection contre le poison message.
-- Un job dont `expires_at` est dépassé n'est **jamais** distribué, même s'il est `pending`.
+- A job in `done` or `cancelled` is terminal: no transition leaves it except an explicit
+  `requeue` from the dashboard, and never from `done`.
+- `attempts` is incremented **at claim time**, not at complete time. A worker that
+  crashes without returning anything therefore consumes an attempt — that is the poison
+  message protection.
+- A job whose `expires_at` has passed is **never** distributed, even if `pending`.
 
-### `kind` = nom de file
+### `kind` = queue name
 
-Le service est multi-usage : `kind` est à la fois le nom de la file et la clé de
-configuration. Conséquences à respecter :
+The service is multi-purpose: `kind` is both the queue name and the configuration key.
+Consequences to respect:
 
-- Un `kind` doit être **déclaré dans `job_kinds` avant usage**. Une contrainte de clé
-  étrangère l'impose. Un producteur qui envoie un `kind` inconnu reçoit `400` avec la liste
-  des `kind` autorisés pour sa clé. Sans ça, une faute de frappe côté producteur crée une
-  file fantôme dont les jobs ne sont jamais réclamés et expirent en silence.
-- `job_kinds.enabled = false` met une file en pause : les jobs continuent d'être acceptés
-  mais ne sont plus distribués. Contrôle d'exploitation utile, pilotable depuis le
-  dashboard, sans toucher aux producteurs.
-- Les défauts de TTL, tentatives et durée de bail viennent de `job_kinds`, pas de constantes
-  en dur. Une OCR de facture et une pré-analyse de dépôt n'ont pas les mêmes ordres de
-  grandeur. Les valeurs fournies dans la requête d'enqueue surchargent ces défauts.
-- `project` est **optionnel** : c'est un simple libellé de regroupement pour le filtrage
-  dans le dashboard, pas une notion structurante. Tout le contexte métier va dans `payload`.
+- A `kind` must be **declared in `job_kinds` before use**. A foreign key constraint
+  enforces it. A producer sending an unknown `kind` receives `400` with the list of
+  `kind`s allowed for its key. Without that, a typo on the producer side creates a ghost
+  queue whose jobs are never claimed and silently expire.
+- `job_kinds.enabled = false` pauses a queue: jobs keep being accepted but are no longer
+  distributed. Useful operational control, driven from the dashboard, without touching
+  producers.
+- TTL, attempts and lease duration defaults come from `job_kinds`, not hard-coded
+  constants. An invoice OCR and a repository pre-analysis do not have the same orders of
+  magnitude. Values provided in the enqueue request override these defaults.
+- `project` is **optional**: it is a simple grouping label for dashboard filtering, not
+  a structural notion. All business context goes in `payload`.
 
 ---
 
 ## 5. API
 
-Préfixe `/api/v1`. Corps en JSON, `camelCase`. Erreurs au format `application/problem+json`.
+Prefix `/api/v1`. JSON bodies, `camelCase`. Errors in `application/problem+json` format.
 
 ### `POST /jobs` — scope `producer`
 
 ```jsonc
-// requête
+// request
 {
-  "idempotencyKey": "gmail:19a3f2c8b1d4e5f6",  // requis, <= 200 car.
-  "kind": "project-preanalysis",               // requis
-  "project": "mon-projet",                     // requis
+  "idempotencyKey": "gmail:19a3f2c8b1d4e5f6",  // required, <= 200 chars
+  "kind": "project-preanalysis",               // required
+  "project": "my-project",                     // required
   "payload": { "subject": "...", "summary": "...", "sender": "..." },
-  "ttlSeconds": 86400,                         // optionnel, défaut 86400, max 604800
-  "maxAttempts": 3                             // optionnel, défaut 3, max 10
+  "ttlSeconds": 86400,                         // optional, default 86400, max 604800
+  "maxAttempts": 3                             // optional, default 3, max 10
 }
 ```
 
-Réponses :
+Responses:
 
 - `201 Created` + `{ "id": 42, "status": "pending", "created": true }`
-- `200 OK` + `{ "id": 42, "status": "leased", "created": false }` si la clé
-  d'idempotence existe déjà. **Ne pas renvoyer 409.** Un producteur doit pouvoir rejouer un
-  envoi
-  sans que ça ressemble à une erreur.
-- `400` si `payload` sérialisé dépasse **32 Ko**, ou si un champ requis manque.
+- `200 OK` + `{ "id": 42, "status": "leased", "created": false }` if the idempotency key
+  already exists. **Do not return 409.** A producer must be able to replay a submission
+  without it looking like an error.
+- `400` if the serialized `payload` exceeds **32 KiB**, or if a required field is
+  missing.
 
-L'idempotence se fait en base (`on conflict (idempotency_key) do nothing` puis relecture),
-pas par un `select` préalable — sinon deux requêtes simultanées passent toutes les deux.
+Idempotency is done in the database (`on conflict (idempotency_key) do nothing` then
+re-read), not with a prior `select` — otherwise two simultaneous requests both get
+through.
 
 ### `POST /jobs/claim` — scope `worker`
 
 ```jsonc
-// requête
+// request
 { "workerId": "dev-etienne", "leaseSeconds": 1200, "kinds": ["project-preanalysis"] }
 ```
 
-- `200 OK` + le job complet, **incluant `leaseToken`** (uuid) et `leaseUntil`.
-- `204 No Content` si la file est vide. Pas de corps, pas d'erreur.
+- `200 OK` + the full job, **including `leaseToken`** (uuid) and `leaseUntil`.
+- `204 No Content` if the queue is empty. No body, no error.
 
-Requête de réservation, atomique, en une seule instruction :
+Reservation query, atomic, in a single statement:
 
 ```sql
 update jobqueue.jobs set
@@ -283,30 +285,30 @@ where id = (
 returning *;
 ```
 
-Le `for update skip locked` est **obligatoire** : sans lui, deux claims concurrents peuvent
-obtenir le même job. C'est le point le plus important du service.
+The `for update skip locked` is **mandatory**: without it, two concurrent claims can get
+the same job. This is the single most important point of the service.
 
-Deux ajouts liés au multi-file :
+Two additions related to multi-queue:
 
-- Les `kinds` demandés sont **intersectés avec les `allowed_kinds` de la clé** avant la
-  requête. Un worker ne peut jamais réclamer un job d'une file qui ne lui est pas attribuée,
-  même en le demandant explicitement. Si l'intersection est vide, `403`.
-- La jointure doit écarter les `kind` dont `job_kinds.enabled = false`.
-- **Équité entre files — obligatoire.** Un worker sert plusieurs `kind`, donc un
-  `order by created_at` global est exclu : une file qui reçoit 500 jobs d'un coup affamerait
-  toutes les autres jusqu'à écoulement. La règle est : prendre le plus vieux job de *chaque*
-  file éligible, puis en choisir un au hasard.
+- The requested `kinds` are **intersected with the key's `allowed_kinds`** before the
+  query. A worker can never claim a job from a queue it was not assigned, even by asking
+  for it explicitly. If the intersection is empty, `403`.
+- The join must exclude `kind`s whose `job_kinds.enabled = false`.
+- **Fairness across queues — mandatory.** A worker serves several `kind`s, so a global
+  `order by created_at` is ruled out: a queue receiving 500 jobs at once would starve
+  all the others until it drained. The rule is: take the oldest job of *each* eligible
+  queue, then pick one at random.
 
-Deux restrictions de PostgreSQL rendent l'écriture naïve impossible — les connaître évite
-une demi-heure de tâtonnement :
+Two PostgreSQL restrictions make the naive version impossible — knowing them saves half
+an hour of trial and error:
 
-- `select distinct on (…) … for update` est refusé (« FOR UPDATE is not allowed with
-  DISTINCT clause »).
-- Une clause de verrouillage ne peut pas s'appliquer au résultat d'un CTE (« FOR UPDATE
-  cannot be applied to a WITH query »).
+- `select distinct on (…) … for update` is refused ("FOR UPDATE is not allowed with
+  DISTINCT clause").
+- A locking clause cannot be applied to the result of a CTE ("FOR UPDATE cannot be
+  applied to a WITH query").
 
-Il faut donc deux niveaux : un sous-select non verrouillant qui désigne les candidats, puis
-un select verrouillant qui en retient un.
+Two levels are therefore needed: a non-locking sub-select that designates the
+candidates, then a locking select that retains one.
 
 ```sql
 update jobqueue.jobs set
@@ -335,9 +337,9 @@ where id = (
 returning *;
 ```
 
-L'ensemble des candidats compte au plus une ligne par file, donc le `order by random()`
-porte sur une poignée de lignes : le coût est négligeable et il n'y a aucun état à
-maintenir côté serveur pour faire tourner les files.
+The candidate set holds at most one row per queue, so the `order by random()` applies to
+a handful of rows: the cost is negligible and there is no server-side state to maintain
+to rotate the queues.
 
 ### `POST /jobs/{id}/heartbeat` — scope `worker`
 
@@ -345,9 +347,9 @@ maintenir côté serveur pour faire tourner les files.
 { "leaseToken": "…", "leaseSeconds": 1200 }
 ```
 
-Prolonge `lease_until`. `200` avec le nouveau `leaseUntil`, `409` si le token ne correspond
-pas ou si le job n'est plus `leased`. Le worker doit traiter ce 409 comme « j'ai perdu le
-bail, j'abandonne » — donc le message d'erreur doit être explicite là-dessus.
+Extends `lease_until`. `200` with the new `leaseUntil`, `409` if the token does not
+match or if the job is no longer `leased`. The worker must treat this 409 as "I lost the
+lease, I give up" — so the error message must be explicit about that.
 
 ### `POST /jobs/{id}/complete` — scope `worker`
 
@@ -356,293 +358,297 @@ bail, j'abandonne » — donc le message d'erreur doit être explicite là-dessu
   "leaseToken": "…",
   "outcome": "success",          // "success" | "failure"
   "result": { "report": "…", "costUsd": 0.42, "durationMs": 91000 },
-  "error": null                  // requis si outcome = "failure"
+  "error": null                  // required if outcome = "failure"
 }
 ```
 
-- `200` avec le statut final calculé (`done`, `pending` si retry possible, ou `failed`).
-- `409` si le `leaseToken` ne correspond pas. **Cas critique** : un worker zombie qui a
-  perdu son bail ne doit pas pouvoir écraser le résultat d'un worker qui a repris le job.
-- Idempotent : rejouer le même complete avec le même token renvoie `200` sans réécrire.
+- `200` with the computed final status (`done`, `pending` if a retry is possible, or
+  `failed`).
+- `409` if the `leaseToken` does not match. **Critical case**: a zombie worker that lost
+  its lease must not be able to overwrite the result of a worker that took the job over.
+- Idempotent: replaying the same complete with the same token returns `200` without
+  rewriting.
 
-Le `result` sérialisé est plafonné à **256 Ko**. Au-delà, `400` : les gros livrables (rapport
-complet, fichier généré) vont dans un stockage objet et seule leur référence passe ici.
+The serialized `result` is capped at **256 KiB**. Beyond that, `400`: large deliverables
+(full report, generated file) go to object storage and only their reference passes here.
 
 ### `GET /jobs/{id}` — scope `producer`
 
-Un producteur doit pouvoir relire l'état et le résultat des jobs **qu'il a créés**, sinon il
-n'a aucun moyen de récupérer le travail sans passer par un callback. Renvoie le job si son
-`kind` fait partie des `allowed_kinds` de la clé, `404` sinon — pas `403`, pour ne pas
-divulguer l'existence de jobs d'autres files.
+A producer must be able to re-read the state and result of the jobs **it created**,
+otherwise it has no way to retrieve the work without a callback. Returns the job if its
+`kind` belongs to the key's `allowed_kinds`, `404` otherwise — not `403`, to avoid
+revealing the existence of jobs in other queues.
 
-Une variante par clé d'idempotence, `GET /jobs/by-key/{idempotencyKey}`, évite au producteur
-de stocker l'`id` numérique : il retrouve son job avec l'identifiant qu'il connaît déjà.
+A variant by idempotency key, `GET /jobs/by-key/{idempotencyKey}`, saves the producer
+from storing the numeric `id`: it finds its job with the identifier it already knows.
 
-### Endpoints d'administration — scope `admin`
+### Administration endpoints — scope `admin`
 
-| Méthode | Route | Effet |
+| Method | Route | Effect |
 |---|---|---|
-| `GET` | `/jobs?status=&project=&kind=&q=&page=` | liste paginée, tri par `created_at` desc |
-| `GET` | `/jobs/{id}` | détail + timeline des `job_events` |
-| `POST` | `/jobs/{id}/requeue` | remet en `pending`, remet `attempts` à 0, journalise |
-| `POST` | `/jobs/{id}/cancel` | passe en `cancelled` |
-| `GET` | `/stats` | compte par statut, âge du plus vieux `pending`, débit 24 h |
+| `GET` | `/jobs?status=&project=&kind=&q=&page=` | paginated list, sorted by `created_at` desc |
+| `GET` | `/jobs/{id}` | detail + `job_events` timeline |
+| `POST` | `/jobs/{id}/requeue` | back to `pending`, resets `attempts` to 0, journaled |
+| `POST` | `/jobs/{id}/cancel` | moves to `cancelled` |
+| `GET` | `/stats` | count per status, age of oldest `pending`, 24 h throughput |
 
-### Santé
+### Health
 
-- `GET /healthz` — vivant, sans auth, sans toucher la base.
-- `GET /readyz` — vérifie la connexion Postgres. Sans auth mais sans détail d'erreur.
+- `GET /healthz` — alive, no auth, without touching the database.
+- `GET /readyz` — checks the Postgres connection. No auth but no error detail.
 
 ---
 
-## 6. Authentification
+## 6. Authentication
 
-Trois scopes : `producer` (enqueue seul), `worker` (claim/heartbeat/complete seuls),
-`admin` (tout + dashboard). Un scope ne donne accès qu'à ses propres routes — un token
-worker qui appelle `/jobs` en POST reçoit `403`.
+Three scopes: `producer` (enqueue only), `worker` (claim/heartbeat/complete only),
+`admin` (everything + dashboard). A scope only grants access to its own routes — a
+worker token calling `/jobs` in POST receives `403`.
 
-Format de clé : `hjq_{scope}_{32 caractères base62}`, par ex. `hjq_worker_7Kf2…`.
-Le `prefix` stocké en clair est les 12 premiers caractères, pour identifier une clé dans le
-dashboard et dans les logs sans exposer le secret.
+Key format: `hjq_{scope}_{32 base62 characters}`, e.g. `hjq_worker_7Kf2…`.
+The `prefix` stored in clear text is the first 12 characters, to identify a key in the
+dashboard and in logs without exposing the secret.
 
-Stockage : **SHA-256 du secret**, en `bytea`. Pas d'Argon2 ni de bcrypt ici — la clé fait
-190 bits d'entropie aléatoire, il n'y a pas de dictionnaire à ralentir, et un hash lent
-sur le chemin chaud du polling serait une erreur de conception.
+Storage: **SHA-256 of the secret**, as `bytea`. No Argon2 or bcrypt here — the key has
+190 bits of random entropy, there is no dictionary to slow down, and a slow hash on the
+hot polling path would be a design mistake.
 
-Points de vigilance :
+Points of vigilance:
 
-- Comparaison en **temps constant** (`CryptographicOperations.FixedTimeEquals`).
-- La clé en clair n'existe qu'une fois, au moment de sa création : affichée dans la réponse
-  puis jamais récupérable. Le dashboard doit le dire explicitement.
-- Jamais de clé dans les logs, ni entière ni partiellement — uniquement le `prefix`.
-- Transport par en-tête `Authorization: Bearer hjq_…`. Pas de clé en query string.
-- `last_used_at` mis à jour au plus une fois par minute et par clé, en tâche de fond. Ne
-  pas faire un `update` sur chaque requête : le worker poll toutes les 30 secondes, ça
-  génèrerait de l'écriture inutile en continu.
-- Rate limiting via `Microsoft.AspNetCore.RateLimiting`, à deux étages : fenêtre glissante
-  **par clé** pour les requêtes authentifiées (généreuse sur `/jobs/claim`, le polling est
-  légitime), et fenêtre **par IP client** pour les requêtes sans clé valide. Voir §12.
+- **Constant-time** comparison (`CryptographicOperations.FixedTimeEquals`).
+- The clear-text key exists only once, at creation time: shown in the response then
+  never retrievable. The dashboard must say so explicitly.
+- Never a key in the logs, neither whole nor partial — only the `prefix`.
+- Transport via `Authorization: Bearer hjq_…` header. No key in query strings.
+- `last_used_at` updated at most once per minute per key, in a background task. Do not
+  `update` on every request: the worker polls every 30 seconds, that would generate
+  continuous pointless writes.
+- Rate limiting via `Microsoft.AspNetCore.RateLimiting`, two-tier: sliding window **per
+  key** for authenticated requests (generous on `/jobs/claim`, polling is legitimate),
+  and a window **per client IP** for requests without a valid key. See §12.
 
-### Amorçage
+### Bootstrap
 
-Au premier démarrage, si la table `api_keys` est vide, le service crée une clé `admin`,
-l'écrit **une fois** dans les logs au niveau `Warning` avec une consigne claire, et
-n'y revient jamais. Alternative acceptée : une variable `HOPPER_BOOTSTRAP_ADMIN_KEY`.
+On first start, if the `api_keys` table is empty, the service creates an `admin` key,
+writes it **once** to the logs at `Warning` level with a clear instruction, and never
+returns to it. Accepted alternative: a `HOPPER_BOOTSTRAP_ADMIN_KEY` variable.
 
 ---
 
 ## 7. Dashboard
 
-Razor Pages, rendu serveur, sur `/admin`. Connexion par saisie d'une clé admin, échangée
-contre un cookie de session (`HttpOnly`, `Secure`, `SameSite=Strict`). Antiforgery sur
-toutes les actions POST.
+Razor Pages, server-rendered, on `/admin`. Sign-in by entering an admin key, exchanged
+for a session cookie (`HttpOnly`, `Secure`, `SameSite=Strict`). Antiforgery on all POST
+actions.
 
-Quatre pages suffisent :
+Four pages are enough:
 
-1. **Vue d'ensemble** — compteurs par statut, âge du plus vieux `pending`, dernière activité
-   par worker. C'est la page qui répond à « est-ce que ça tourne ? ».
-2. **Liste** — filtres statut / projet / recherche, pagination. Actions en ligne : requeue,
+1. **Overview** — counters per status, age of the oldest `pending`, latest activity per
+   worker. This is the page that answers "is it running?".
+2. **List** — status / project / search filters, pagination. Inline actions: requeue,
    cancel.
-3. **Détail** — payload et résultat en JSON formaté, timeline des `job_events`, dernière
-   erreur en entier.
-4. **Clés** — liste (nom, prefix, scope, dernière utilisation), création, révocation.
+3. **Detail** — payload and result as formatted JSON, `job_events` timeline, last error
+   in full.
+4. **Keys** — list (name, prefix, scope, last use), creation, revocation.
 
-Contraintes de forme : pas de framework CSS externe, pas de JS de build. Un fichier CSS
-écrit à la main, du JS uniquement pour le repliage des blocs JSON. La page de liste doit
-être lisible à 1200 px sans défilement horizontal. Auto-rafraîchissement de la vue
-d'ensemble par `<meta http-equiv="refresh">` toutes les 30 s — suffisant, et zéro code.
-
----
-
-## 8. Tâche de fond
-
-Un `BackgroundService` unique, toutes les 60 secondes, dans une transaction :
-
-1. Les jobs `pending` ou `leased` dont `expires_at < now()` passent en `expired`.
-2. Les jobs `leased` dont `lease_until < now()` et `attempts >= max_attempts` passent en
-   `failed` avec `last_error = "bail expiré, tentatives épuisées"`. Ceux qui ont encore des
-   tentatives sont laissés tels quels : la requête de claim les reprendra naturellement.
-3. Purge des jobs terminaux de plus de 90 jours (durée configurable).
-
-Chaque transition écrit dans `job_events` avec `actor = 'system'`.
+Form constraints: no external CSS framework, no build JS. One hand-written CSS file, JS
+only for folding JSON blocks. The list page must be readable at 1200 px without
+horizontal scrolling. Overview auto-refresh via `<meta http-equiv="refresh">` every
+30 s — sufficient, and zero code.
 
 ---
 
-## 9. Tests exigés
+## 8. Background task
 
-Les tests unitaires sur la logique triviale n'intéressent personne. Ce qui doit être couvert,
-avec Testcontainers et une vraie base :
+A single `BackgroundService`, every 60 seconds, in one transaction:
 
-1. **Claim concurrent** — 20 claims en parallèle sur 5 jobs : exactement 5 réussissent,
-   aucun job distribué deux fois, 15 réponses `204`. C'est le test qui justifie le projet.
-2. **Enqueue concurrent** — 10 POST simultanés avec la même clé d'idempotence : un seul job
-   créé, les 10 réponses cohérentes.
-3. **Bail expiré** — un job claim puis abandonné redevient claimable après expiration,
-   avec `attempts` correctement incrémenté.
-4. **Token de bail périmé** — worker A claim, son bail expire, worker B claim, puis A tente
-   un `complete` : il reçoit `409` et le job de B n'est pas altéré.
-5. **Poison message** — un job claim et abandonné `max_attempts` fois finit en `failed` et
-   n'est plus jamais distribué.
-6. **Isolation des scopes** — chaque scope reçoit `403` sur les routes des deux autres.
-7. **TTL** — un job dont `expires_at` est passé n'est pas distribué même en `pending`.
-8. **Cloisonnement des files** — une clé worker limitée à `kind-a` ne reçoit jamais un job
-   `kind-b`, y compris quand elle le demande explicitement et que la file `kind-b` est la
-   seule non vide.
-9. **File en pause** — `enabled = false` : l'enqueue réussit, le claim renvoie `204`.
-10. **Équité** — deux files, 200 jobs dans la première et 3 dans la seconde. Un worker qui
-    réclame les deux obtient les 3 jobs de la petite file en moins de 10 claims. Sans la
-    sélection équitable, il en faudrait 200.
+1. `pending` or `leased` jobs whose `expires_at < now()` move to `expired`.
+2. `leased` jobs whose `lease_until < now()` and `attempts >= max_attempts` move to
+   `failed` with `last_error = "lease expired, attempts exhausted"`. Those with attempts
+   left are left as-is: the claim query picks them up naturally.
+3. Purge of terminal jobs older than 90 days (configurable duration).
 
-**Pas de test de charge.** Le volume cible est de quelques dizaines de jobs par jour : mesurer
-un débit ne dirait rien d'utile. Ce qui casse ici n'est pas la charge mais la **concurrence**,
-et le test 1 la couvre déjà — 20 claims simultanés sur 5 jobs sondent exactement le même
-chemin de code que deux workers en production. Si un jour plusieurs workers tournent
-réellement, porter le test 1 à deux processus distincts plutôt que deux tâches suffira.
-
-Le signal d'exploitation qui remplace le test de charge est l'âge du plus vieux `pending`,
-déjà exposé par `/stats` : s'il grimpe, le worker est mort ou saturé. C'est la seule métrique
-à surveiller.
+Every transition writes to `job_events` with `actor = 'system'`.
 
 ---
 
-## 10. Ordre de construction
+## 9. Required tests
 
-Livrer par étapes, chacune fonctionnelle et testée avant de passer à la suivante.
+Unit tests on trivial logic interest nobody. What must be covered, with Testcontainers
+and a real database:
 
-1. Squelette, `/healthz`, migrations DbUp, connexion Postgres, docker-compose pour le dev.
-2. Table `jobs`, `POST /jobs` avec idempotence, `POST /jobs/claim` avec bail. Tests 1 à 3.
-3. Heartbeat et complete avec vérification du `leaseToken`. Tests 4 et 5.
-4. Clés API et scopes. Test 6. Amorçage de la clé admin.
-5. `job_events` sur toutes les transitions, endpoints d'admin.
+1. **Concurrent claim** — 20 parallel claims over 5 jobs: exactly 5 succeed, no job
+   distributed twice, 15 `204` responses. This is the test that justifies the project.
+2. **Concurrent enqueue** — 10 simultaneous POSTs with the same idempotency key: a
+   single job created, all 10 responses consistent.
+3. **Expired lease** — a claimed then abandoned job becomes claimable again after
+   expiry, with `attempts` correctly incremented.
+4. **Stale lease token** — worker A claims, its lease expires, worker B claims, then A
+   attempts a `complete`: it receives `409` and B's job is not altered.
+5. **Poison message** — a job claimed and abandoned `max_attempts` times ends in
+   `failed` and is never distributed again.
+6. **Scope isolation** — each scope receives `403` on the routes of the two others.
+7. **TTL** — a job whose `expires_at` has passed is not distributed even when `pending`.
+8. **Queue isolation** — a worker key limited to `kind-a` never receives a `kind-b`
+   job, including when it asks for it explicitly and the `kind-b` queue is the only
+   non-empty one.
+9. **Paused queue** — `enabled = false`: enqueue succeeds, claim returns `204`.
+10. **Fairness** — two queues, 200 jobs in the first and 3 in the second. A worker
+    claiming both gets the 3 jobs of the small queue in fewer than 10 claims. Without
+    fair selection, it would take ~200.
+
+**No load test.** The target volume is a few dozen jobs per day: measuring throughput
+would say nothing useful. What breaks here is not load but **concurrency**, and test 1
+already covers it — 20 simultaneous claims over 5 jobs probe exactly the same code path
+as two workers in production. If several workers ever really run, upgrading test 1 to
+two separate processes rather than two tasks will be enough.
+
+The operational signal that replaces the load test is the age of the oldest `pending`,
+already exposed by `/stats`: if it climbs, the worker is dead or saturated. It is the
+only metric to watch.
+
+---
+
+## 10. Build order
+
+Deliver in stages, each functional and tested before moving to the next.
+
+1. Skeleton, `/healthz`, DbUp migrations, Postgres connection, docker-compose for dev.
+2. `jobs` table, `POST /jobs` with idempotency, `POST /jobs/claim` with lease. Tests 1
+   to 3.
+3. Heartbeat and complete with `leaseToken` verification. Tests 4 and 5.
+4. API keys and scopes. Test 6. Admin key bootstrap.
+5. `job_events` on all transitions, admin endpoints.
 6. Dashboard.
-7. Tâche de fond, rate limiting, test 7.
-8. Dockerfile, `compose.yaml` avec Traefik et les deux réseaux, README avec les variables
-   d'environnement et un exemple `curl` par endpoint.
-9. Sauvegarde `pg_dump` avec rétention, et procédure de restauration testée.
+7. Background task, rate limiting, test 7.
+8. Dockerfile, `compose.yaml` with Traefik and the two networks, README with environment
+   variables and one `curl` example per endpoint.
+9. `pg_dump` backup with retention, and a tested restore procedure.
 
 ---
 
-## 11. Définition du « terminé »
+## 11. Definition of "done"
 
-- `dotnet test` passe, y compris les dix scénarios du §9.
-- Aucun avertissement de compilation. `<TreatWarningsAsErrors>` activé.
-- README : variables d'environnement, procédure de déploiement, un `curl` par endpoint,
-  et un exemple de cycle complet enqueue → claim → heartbeat → complete.
-- Un `CLAUDE.md` à la racine qui résume l'architecture, les invariants de la §4 et les
-  commandes utiles, pour les sessions futures.
-- Aucun secret ni chaîne de connexion dans le dépôt. `.gitignore` couvrant
-  `appsettings.Development.json` et `launchSettings.json`.
-- Sauvegarde `pg_dump` en place et **restauration exécutée une fois**, avec la procédure
-  consignée dans le README.
+- `dotnet test` passes, including the ten scenarios of §9.
+- No compilation warnings. `<TreatWarningsAsErrors>` enabled.
+- README: environment variables, deployment procedure, one `curl` per endpoint, and a
+  full cycle example enqueue → claim → heartbeat → complete.
+- A `CLAUDE.md` at the root summarising the architecture, the §4 invariants and useful
+  commands, for future sessions.
+- No secret or connection string in the repository. `.gitignore` covering
+  `appsettings.Development.json` and `launchSettings.json`.
+- `pg_dump` backup in place and **restore performed once**, with the procedure recorded
+  in the README.
 
 ---
 
-## 12. Exposition publique
+## 12. Public exposure
 
-L'API est **ouverte sur l'internet public**. C'est un choix assumé : les producteurs sont
-répartis et arbitraires, et les workers sont derrière NAT, donc tous les appels — production
-comme consommation — sont des requêtes HTTPS entrantes depuis n'importe où.
+The API is **open to the public internet**. This is a deliberate choice: producers are
+distributed and arbitrary, and workers are behind NAT, so all calls — production and
+consumption alike — are inbound HTTPS requests from anywhere.
 
-Cela change le modèle de menace. Toutes les routes `/api` doivent tenir face à des scanners
-automatisés en continu, pas seulement face à des clients coopératifs.
+That changes the threat model. All `/api` routes must hold up against continuous
+automated scanners, not only cooperative clients.
 
-### Ce qui est public et ce qui ne l'est pas
+### What is public and what is not
 
-| Surface | Exposition |
+| Surface | Exposure |
 |---|---|
-| `/api/v1/jobs` (POST, GET) | publique, clé `producer` requise |
-| `/api/v1/jobs/claim`, `/heartbeat`, `/complete` | publique, clé `worker` requise |
-| `/api/v1/jobs` (routes d'admin) | publique, clé `admin` requise |
-| `/admin` (dashboard) | publique mais **restreinte par IP** au niveau Traefik |
-| `/healthz`, `/readyz` | publiques, sans auth, sans aucun détail |
-| PostgreSQL | jamais exposé, réseau interne uniquement |
+| `/api/v1/jobs` (POST, GET) | public, `producer` key required |
+| `/api/v1/jobs/claim`, `/heartbeat`, `/complete` | public, `worker` key required |
+| `/api/v1/jobs` (admin routes) | public, `admin` key required |
+| `/admin` (dashboard) | public but **IP-restricted** at the Traefik level |
+| `/healthz`, `/readyz` | public, no auth, no detail |
+| PostgreSQL | never exposed, internal network only |
 
-### Durcissement obligatoire
+### Mandatory hardening
 
-- **Limite de taille de corps au niveau Kestrel** (`MaxRequestBodySize`), pas seulement une
-  validation applicative : 64 Ko sur `/jobs`, 512 Ko sur `/complete`. Sinon un corps de
-  plusieurs gigaoctets est lu en entier avant d'être rejeté. Doubler d'un
-  `buffering.maxRequestBodyBytes` côté Traefik.
-- **Deux étages de rate limiting.** Pour les requêtes authentifiées, par clé API — c'est le
-  compteur qui compte. Pour les requêtes **sans clé valide**, par IP client lue dans
-  `X-Forwarded-For`, avec un seuil bas : c'est la seule protection contre un balayage, et
-  elle ne fonctionne que si `ForwardedHeadersOptions` est correctement configuré (§13). Un
-  `ratelimit` Traefik en amont sert de filet.
-- **Journalisation des échecs d'authentification** avec l'IP et le préfixe de clé tenté, mais
-  au niveau `Information`, pas `Warning` : sur une IP publique le bruit de fond des scanners
-  saturerait des alertes.
-- **404 pour tout chemin inconnu**, sans page d'erreur, sans en-tête `Server`, sans version
-  de framework. `app.UseExceptionHandler` renvoyant du `problem+json` neutre ; jamais de
-  `DeveloperExceptionPage` en production, jamais de trace d'appels dans une réponse.
-- **Aucune énumération.** `GET /jobs/{id}` sur un job d'une autre file renvoie `404`, jamais
-  `403` — déjà spécifié au §5, mais c'est ici que la raison devient concrète.
-- **Pas de CORS.** Aucun producteur n'est un navigateur. Ne pas ajouter de politique CORS,
-  même permissive « pour tester ».
-- En-têtes de sécurité sur `/admin` (`X-Content-Type-Options`, `Referrer-Policy`,
-  `Content-Security-Policy` restrictive) : c'est la seule surface avec des sessions par
-  cookie, donc la seule où le XSS a un intérêt pour un attaquant.
-- Les `ipallowlist` de Traefik sur `/admin` supposent des IP stables. Si ta connexion est
-  dynamique, prévoir une plage large plutôt que de désactiver la protection.
+- **Body size limit at the Kestrel level** (`MaxRequestBodySize`), not just application
+  validation: 64 KiB on `/jobs`, 512 KiB on `/complete`. Otherwise a multi-gigabyte body
+  is read in full before being rejected. Double it with a
+  `buffering.maxRequestBodyBytes` on the Traefik side.
+- **Two-tier rate limiting.** For authenticated requests, per API key — that is the
+  counter that matters. For requests **without a valid key**, per client IP read from
+  `X-Forwarded-For`, with a low threshold: it is the only protection against sweeps, and
+  it only works if `ForwardedHeadersOptions` is configured correctly (§13). A Traefik
+  `ratelimit` upstream acts as a safety net.
+- **Log authentication failures** with the IP and the attempted key prefix, but at
+  `Information` level, not `Warning`: on a public IP the background noise of scanners
+  would saturate alerts.
+- **404 for any unknown path**, no error page, no `Server` header, no framework
+  version. `app.UseExceptionHandler` returning neutral `problem+json`; never
+  `DeveloperExceptionPage` in production, never a stack trace in a response.
+- **No enumeration.** `GET /jobs/{id}` on a job from another queue returns `404`, never
+  `403` — already specified in §5, but this is where the reason becomes concrete.
+- **No CORS.** No producer is a browser. Do not add a CORS policy, even a permissive one
+  "for testing".
+- Security headers on `/admin` (`X-Content-Type-Options`, `Referrer-Policy`, restrictive
+  `Content-Security-Policy`): it is the only surface with cookie sessions, hence the
+  only one where XSS is of interest to an attacker.
+- Traefik's `ipallowlist` on `/admin` assumes stable IPs. If your connection is dynamic,
+  plan a wide range rather than disabling the protection.
 
 ---
 
-## 13. Déploiement — conteneur derrière Traefik
+## 13. Deployment — container behind Traefik
 
-Cible arrêtée : PostgreSQL 16+, .NET 10, image Docker, Traefik en frontal sur le même hôte
-que n8n. Le conteneur ne publie **aucun port sur l'hôte** — `expose` uniquement, Traefik
-atteint le service par le réseau Docker.
+Settled target: PostgreSQL 16+, .NET 10, Docker image, Traefik front on the same host as
+n8n. The container publishes **no port on the host** — `expose` only, Traefik reaches
+the service via the Docker network.
 
-### Base de données
+### Database
 
-Conteneur PostgreSQL **dédié à ce service**. n8n reste sur son SQLite et n'est pas touché.
+PostgreSQL container **dedicated to this service**. n8n stays on its SQLite and is not
+touched.
 
-- Version majeure **épinglée** : `postgres:17`, jamais `latest` ni `postgres`. Une image qui
-  passe en majeure suivante refuse de démarrer sur un répertoire de données existant et
-  impose un `pg_upgrade` ou un cycle dump/restore. Le README doit mentionner cette contrainte
-  à côté de la version choisie.
-- Volume nommé pour `/var/lib/postgresql/data`. Pas de bind mount sur l'hôte.
-- Aucun port publié, uniquement sur `hopper-internal`.
-- `pg_dump` quotidien via un conteneur de sauvegarde ou une tâche cron de l'hôte, compressé,
-  avec rétention glissante (7 quotidiennes, 4 hebdomadaires).
-- La procédure de **restauration** doit être écrite dans le README et exécutée une fois pour
-  de vrai. Une sauvegarde jamais restaurée n'est pas une sauvegarde.
+- Major version **pinned**: `postgres:17`, never `latest` nor `postgres`. An image that
+  moves to the next major refuses to start on an existing data directory and forces a
+  `pg_upgrade` or a dump/restore cycle. The README must mention this constraint next to
+  the chosen version.
+- Named volume for `/var/lib/postgresql/data`. No bind mount on the host.
+- No published port, only on `hopper-internal`.
+- Daily `pg_dump` via a backup container or a host cron task, compressed, with rolling
+  retention (7 daily, 4 weekly).
+- The **restore** procedure must be written in the README and actually performed once. A
+  backup that was never restored is not a backup.
 
 ### Image
 
-- Multi-stage sur `mcr.microsoft.com/dotnet/aspnet:10.0` en runtime.
-- `USER $APP_UID` : pas de root dans le conteneur.
-- `ASPNETCORE_URLS=http://+:8080`. Pas de TLS dans le conteneur, pas de certificat.
-- **Ne pas appeler `UseHttpsRedirection()` ni `UseHsts()`.** Traefik termine TLS et gère la
-  redirection ; les activer ici provoque au mieux une redirection en boucle, au pire des
-  URL générées en `http` sur un port interne.
-- `HEALTHCHECK` sur `/healthz`, pour que `depends_on: condition: service_healthy` fonctionne.
-- Arrêt propre : le service doit terminer le job HTTP en cours sur `SIGTERM`. Prévoir une
-  marge de `stop_grace_period` supérieure au `ShutdownTimeout` d'ASP.NET.
+- Multi-stage on `mcr.microsoft.com/dotnet/aspnet:10.0` for runtime.
+- `USER $APP_UID`: no root in the container.
+- `ASPNETCORE_URLS=http://+:8080`. No TLS in the container, no certificate.
+- **Do not call `UseHttpsRedirection()` or `UseHsts()`.** Traefik terminates TLS and
+  handles redirection; enabling them here causes at best a redirect loop, at worst URLs
+  generated as `http` on an internal port.
+- `HEALTHCHECK` on `/healthz`, so that `depends_on: condition: service_healthy` works.
+- Clean shutdown: the service must finish the in-flight HTTP job on `SIGTERM`. Plan a
+  `stop_grace_period` margin above ASP.NET's `ShutdownTimeout`.
 
-### En-têtes de proxy — le piège à ne pas manquer
+### Proxy headers — the trap not to miss
 
-`ForwardedHeadersOptions` doit traiter `XForwardedFor` et `XForwardedProto`, et il faut
-**vider `KnownNetworks` et `KnownProxies`**. En Docker l'IP de Traefik est celle du réseau
-bridge, elle change à chaque recréation, et la liste blanche par défaut d'ASP.NET rejette
-alors silencieusement les en-têtes : les cookies `Secure` cessent de fonctionner et
-l'application se croit en clair. C'est une panne classique et pénible à diagnostiquer.
+`ForwardedHeadersOptions` must handle `XForwardedFor` and `XForwardedProto`, and
+**`KnownNetworks` and `KnownProxies` must be emptied**. In Docker, Traefik's IP is that
+of the bridge network, it changes on every recreation, and ASP.NET's default allowlist
+then silently rejects the headers: `Secure` cookies stop working and the application
+believes it is on plain HTTP. It is a classic and painful failure to diagnose.
 
-Le rate limiting authentifié reste **clé par clé API**. Le limiteur par IP du §12 dépend
-entièrement de cette configuration : sans en-têtes de transfert valides, toutes les requêtes
-paraissent venir de Traefik et le compteur par IP plafonnerait tout le monde ensemble.
+Authenticated rate limiting stays **key by API key**. The per-IP limiter of §12 depends
+entirely on this configuration: without valid forwarded headers, all requests appear to
+come from Traefik and the per-IP counter would throttle everyone together.
 
-### Réseaux
+### Networks
 
-Deux réseaux Docker, et c'est structurant :
+Two Docker networks, and this is structural:
 
-- `traefik-public` — le service seul y est attaché, avec ses labels de routage.
-- `hopper-internal` — le service et PostgreSQL. **Postgres n'est jamais sur le réseau
-  public et ne publie aucun port.**
+- `traefik-public` — the service alone is attached to it, with its routing labels.
+- `hopper-internal` — the service and PostgreSQL. **Postgres is never on the public
+  network and publishes no port.**
 
-### Labels Traefik
+### Traefik labels
 
-Un router pour l'API, un second pour `/admin` afin de pouvoir durcir ce dernier
-indépendamment :
+One router for the API, a second for `/admin` so the latter can be hardened
+independently:
 
 ```yaml
 labels:
@@ -661,42 +667,40 @@ labels:
   - traefik.http.middlewares.hopper-admin-allow.ipallowlist.sourcerange=…
 ```
 
-La liste d'IP autorisées sur `/admin` est une défense supplémentaire, pas un remplacement :
-l'authentification par clé admin reste requise derrière.
+The IP allowlist on `/admin` is an additional defence, not a replacement: admin key
+authentication remains required behind it.
 
 ### Migrations
 
-DbUp s'exécute au démarrage, avant que le service accepte du trafic. Prendre un
-`pg_advisory_lock` pendant la migration : inoffensif avec une seule instance, indispensable
-le jour où le conteneur est recréé avant l'arrêt complet du précédent. Si la migration
-échoue, le processus sort en code non nul — pas de démarrage en base incohérente.
+DbUp runs at startup, before the service accepts traffic. Take a `pg_advisory_lock`
+during migration: harmless with a single instance, indispensable the day the container
+is recreated before the previous one has fully stopped. If the migration fails, the
+process exits non-zero — no starting on an inconsistent database.
 
-### Variables d'environnement
+### Environment variables
 
-`HOPPER_` comme préfixe. Au minimum : chaîne de connexion, `HOPPER_BOOTSTRAP_ADMIN_KEY`,
-niveau de log. La clé d'amorçage apparaîtra dans `docker logs` si elle est générée
-automatiquement — le README doit dire de la révoquer après avoir créé les vraies clés.
+`HOPPER_` as prefix. At minimum: connection string, `HOPPER_BOOTSTRAP_ADMIN_KEY`, log
+level. The bootstrap key will appear in `docker logs` if it is generated automatically —
+the README must say to revoke it after creating the real keys.
 
-### Livrables
+### Deliverables
 
-`Dockerfile`, `compose.yaml` complet (service + Postgres + les deux réseaux + labels), et
-un `compose.override.yaml` de développement qui publie le port et monte le code à chaud.
+`Dockerfile`, complete `compose.yaml` (service + Postgres + both networks + labels), and
+a development `compose.override.yaml` that publishes the port and hot-mounts the code.
 
 ---
 
-## 14. Décisions arrêtées
+## 14. Settled decisions
 
-Tout est tranché. Ne pas revenir sur ces points sans en parler :
+Everything is decided. Do not revisit these points without discussing first:
 
-- PostgreSQL 17 en conteneur dédié. Pas de partage avec n8n, qui reste sur SQLite.
-- **L'API est publique sur internet.** n8n n'est qu'un producteur parmi d'autres, et rien
-  dans le code ne doit le mentionner ni supposer son existence.
-- .NET 10, conteneur derrière Traefik, aucun port publié sur l'hôte.
-- **Un worker sert plusieurs files.** La sélection équitable du §5 est donc obligatoire, pas
-  optionnelle, et le test 10 la vérifie.
-- Aucun callback HTTP sortant. Les producteurs interrogent `GET /jobs/{id}`.
-- Aucun test de charge. Les tests de concurrence du §9 sont ce qui compte.
-- Un seul worker en pratique au démarrage, mais le design et les tests supposent qu'il puisse
-  y en avoir plusieurs : ne prendre aucun raccourci qui supposerait l'unicité du worker.
-
-
+- PostgreSQL 17 in a dedicated container. No sharing with n8n, which stays on SQLite.
+- **The API is public on the internet.** n8n is just one producer among others, and
+  nothing in the code must mention it or assume its existence.
+- .NET 10, container behind Traefik, no port published on the host.
+- **A worker serves several queues.** The fair selection of §5 is therefore mandatory,
+  not optional, and test 10 verifies it.
+- No outbound HTTP callback. Producers poll `GET /jobs/{id}`.
+- No load test. The §9 concurrency tests are what matters.
+- A single worker in practice at the start, but the design and the tests assume there
+  may be several: take no shortcut that would assume worker uniqueness.

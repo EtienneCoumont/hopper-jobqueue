@@ -7,9 +7,9 @@
 <h1>Jobs</h1>
 
 <form method="get" class="filters">
-    <label>Statut
+    <label>Status
         <select name="status">
-            <option value="">(tous)</option>
+            <option value="">(all)</option>
             @foreach (var status in JobStatus.All)
             {
                 if (status == Model.Status)
@@ -23,11 +23,11 @@
             }
         </select>
     </label>
-    <label>Projet <input type="text" name="project" value="@Model.Project" /></label>
-    <label>File <input type="text" name="kind" value="@Model.Kind" /></label>
-    <label>Recherche <input type="text" name="q" value="@Model.Q" /></label>
-    <button type="submit">Filtrer</button>
-    <a href="/admin/jobs">Réinitialiser</a>
+    <label>Project <input type="text" name="project" value="@Model.Project" /></label>
+    <label>Kind <input type="text" name="kind" value="@Model.Kind" /></label>
+    <label>Search <input type="text" name="q" value="@Model.Q" /></label>
+    <button type="submit">Filter</button>
+    <a href="/admin/jobs">Reset</a>
 </form>
 
 <p class="muted">@Model.Result.Total job(s) — page @Model.Result.Page</p>
@@ -36,12 +36,12 @@
     <thead>
     <tr>
         <th>Id</th>
-        <th>File</th>
-        <th>Projet</th>
-        <th>Statut</th>
-        <th>Ess.</th>
+        <th>Kind</th>
+        <th>Project</th>
+        <th>Status</th>
+        <th>Att.</th>
         <th>Worker</th>
-        <th>Créé</th>
+        <th>Created</th>
         <th>Actions</th>
     </tr>
     </thead>
@@ -68,7 +68,7 @@
                 {
                     <form method="post" asp-page-handler="Cancel" asp-route-id="@job.Id">
                         <input type="hidden" name="returnQuery" value="@Model.CurrentQuery" />
-                        <button type="submit" class="danger">Annuler</button>
+                        <button type="submit" class="danger">Cancel</button>
                     </form>
                 }
             </td>
@@ -80,10 +80,10 @@
 <nav class="pager">
     @if (Model.Result.Page > 1)
     {
-        <a href="/admin/jobs?@Model.QueryForPage(Model.Result.Page - 1)">← Précédente</a>
+        <a href="/admin/jobs?@Model.QueryForPage(Model.Result.Page - 1)">← Previous</a>
     }
     @if ((long)Model.Result.Page * Model.Result.PageSize < Model.Result.Total)
     {
-        <a href="/admin/jobs?@Model.QueryForPage(Model.Result.Page + 1)">Suivante →</a>
+        <a href="/admin/jobs?@Model.QueryForPage(Model.Result.Page + 1)">Next →</a>
     }
 </nav>

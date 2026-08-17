@@ -6,13 +6,13 @@ using Npgsql;
 namespace HopperJobQueue.Api.Maintenance;
 
 /// <summary>
-/// Tâche de fond unique (§8 du brief), toutes les 60 secondes, dans une transaction :
-/// 1. pending/leased dont expires_at est dépassé → expired ;
-/// 2. leased dont le bail est expiré, tentatives épuisées → failed (les autres sont laissés
-///    tels quels : la requête de claim les reprend naturellement) ;
-/// 3. purge des jobs terminaux au-delà de la rétention de leur file.
-/// Chaque transition écrit dans job_events avec actor = 'system'. Le tampon last_used_at
-/// des clés API est vidé au même rythme.
+/// Single background task (brief §8), every 60 seconds, in one transaction:
+/// 1. pending/leased jobs whose expires_at has passed → expired;
+/// 2. leased jobs whose lease expired with attempts exhausted → failed (the others are
+///    left as-is: the claim query picks them up naturally);
+/// 3. purge of terminal jobs beyond their queue's retention.
+/// Every transition writes to job_events with actor = 'system'. The API keys'
+/// last_used_at buffer is flushed at the same pace.
 /// </summary>
 public sealed class SweeperService(
     NpgsqlDataSource dataSource,
@@ -67,7 +67,7 @@ public sealed class SweeperService(
                 ),
                 ev as (
                   insert into jobqueue.job_events (job_id, from_status, to_status, actor, note)
-                  select id, old_status, 'expired', 'system', 'expires_at dépassé' from updated
+                  select id, old_status, 'expired', 'system', 'expires_at exceeded' from updated
                 )
                 select count(*) from updated
                 """,
@@ -83,7 +83,7 @@ public sealed class SweeperService(
                 updated as (
                   update jobqueue.jobs j
                   set status = 'failed', finished_at = now(),
-                      last_error = 'bail expiré, tentatives épuisées',
+                      last_error = 'lease expired, attempts exhausted',
                       lease_token = null, lease_until = null
                   from candidate c
                   where j.id = c.id
@@ -91,7 +91,7 @@ public sealed class SweeperService(
                 ),
                 ev as (
                   insert into jobqueue.job_events (job_id, from_status, to_status, actor, note)
-                  select id, 'leased', 'failed', 'system', 'bail expiré, tentatives épuisées' from updated
+                  select id, 'leased', 'failed', 'system', 'lease expired, attempts exhausted' from updated
                 )
                 select count(*) from updated
                 """,

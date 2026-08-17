@@ -141,7 +141,7 @@ public static class JobEndpoints
     {
         var key = context.GetApiKey()!;
 
-        // 404 — jamais 403 : ne pas divulguer l'existence de jobs d'autres files.
+        // 404 — never 403: do not reveal the existence of jobs in other queues.
         if (job is null
             || (key.Scope != ApiScope.Admin && !key.AllowedKinds.Contains(job.Kind, StringComparer.Ordinal)))
         {
@@ -183,7 +183,7 @@ public static class JobEndpoints
             ? request.Kinds.Where(k => allowedKinds.Contains(k, StringComparer.Ordinal)).Distinct().ToArray()
             : allowedKinds;
 
-        // Un worker ne peut jamais réclamer une file qui ne lui est pas attribuée.
+        // A worker can never claim a queue it was not assigned.
         if (kinds.Length == 0)
         {
             return Results.Problem(
@@ -382,7 +382,7 @@ public static class JobEndpoints
         lastError = job.LastError,
     };
 
-    // Le leaseToken n'apparaît que dans la réponse de claim — jamais dans les lectures.
+    // The leaseToken only ever appears in the claim response — never in reads.
     private static object ClaimedJobView(Job job) => new
     {
         id = job.Id,

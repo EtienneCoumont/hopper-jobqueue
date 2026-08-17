@@ -30,8 +30,8 @@ public sealed class LeaseTests(IntegrationFixture fixture) : IAsyncLifetime
     [Fact]
     public async Task Test3_ExpiredLease_JobClaimableAgain_AttemptsIncremented()
     {
-        // Un job claim puis abandonné redevient claimable après expiration du bail,
-        // avec attempts correctement incrémenté.
+        // A claimed then abandoned job becomes claimable again after the lease
+        // expires, with attempts correctly incremented.
         using var producer = fixture.ClientWithKey(_producerKey);
         using var worker = fixture.ClientWithKey(_workerKey);
 
@@ -43,7 +43,7 @@ public sealed class LeaseTests(IntegrationFixture fixture) : IAsyncLifetime
         var jobId = firstJson.JobId();
         Assert.Equal(1, firstJson["attempts"]!.GetValue<int>());
 
-        // Bail encore actif : personne d'autre ne peut le prendre.
+        // Lease still active: nobody else can take it.
         var whileLeased = await worker.ClaimAsync(workerId: "worker-b");
         Assert.Equal(HttpStatusCode.NoContent, whileLeased.StatusCode);
 
@@ -60,8 +60,8 @@ public sealed class LeaseTests(IntegrationFixture fixture) : IAsyncLifetime
     [Fact]
     public async Task Test4_StaleLeaseToken_CompleteRejected_OtherWorkerUnaffected()
     {
-        // Worker A claim, son bail expire, worker B claim, puis A tente un complete :
-        // 409, et le job de B n'est pas altéré.
+        // Worker A claims, its lease expires, worker B claims, then A attempts a
+        // complete: 409, and B's job is not altered.
         using var producer = fixture.ClientWithKey(_producerKey);
         using var worker = fixture.ClientWithKey(_workerKey);
 
@@ -81,7 +81,7 @@ public sealed class LeaseTests(IntegrationFixture fixture) : IAsyncLifetime
         var staleComplete = await worker.CompleteAsync(jobId, tokenA, "success", new { report = "stale" });
         Assert.Equal(HttpStatusCode.Conflict, staleComplete.StatusCode);
 
-        // Le job de B est intact : toujours leased pour worker-b, sans résultat écrit.
+        // B's job is intact: still leased by worker-b, no result written.
         var status = await fixture.DbScalarAsync<string>(
             "select status from jobqueue.jobs where id = @Id", new { Id = jobId });
         Assert.Equal("leased", status);
@@ -92,11 +92,11 @@ public sealed class LeaseTests(IntegrationFixture fixture) : IAsyncLifetime
             "select result is not null from jobqueue.jobs where id = @Id", new { Id = jobId });
         Assert.False(hasResult);
 
-        // Un heartbeat avec le token périmé est rejeté avec le même 409 explicite.
+        // A heartbeat with the stale token is rejected with the same explicit 409.
         var staleHeartbeat = await worker.HeartbeatAsync(jobId, tokenA);
         Assert.Equal(HttpStatusCode.Conflict, staleHeartbeat.StatusCode);
 
-        // B, lui, termine normalement.
+        // B, on the other hand, completes normally.
         var completeB = await worker.CompleteAsync(jobId, tokenB, "success", new { report = "ok" });
         Assert.Equal(HttpStatusCode.OK, completeB.StatusCode);
         Assert.Equal("done", (await completeB.JsonAsync())["status"]!.GetValue<string>());
@@ -105,8 +105,8 @@ public sealed class LeaseTests(IntegrationFixture fixture) : IAsyncLifetime
     [Fact]
     public async Task Test5_PoisonMessage_EndsFailed_NeverDistributedAgain()
     {
-        // Un job claim et abandonné max_attempts fois finit en failed et n'est
-        // plus jamais distribué.
+        // A job claimed and abandoned max_attempts times ends in failed and is
+        // never distributed again.
         using var producer = fixture.ClientWithKey(_producerKey);
         using var worker = fixture.ClientWithKey(_workerKey);
 
@@ -121,11 +121,11 @@ public sealed class LeaseTests(IntegrationFixture fixture) : IAsyncLifetime
             await ExpireLeaseAsync(json.JobId());
         }
 
-        // Tentatives épuisées : plus jamais distribué, même bail expiré.
+        // Attempts exhausted: never distributed again, even with an expired lease.
         var exhausted = await worker.ClaimAsync(workerId: "crashy-worker");
         Assert.Equal(HttpStatusCode.NoContent, exhausted.StatusCode);
 
-        // Le balayeur le passe en failed avec le message convenu.
+        // The sweeper moves it to failed with the agreed message.
         await fixture.Factory.Services.GetRequiredService<SweeperService>().RunOnceAsync();
 
         var status = await fixture.DbScalarAsync<string>(
@@ -133,7 +133,7 @@ public sealed class LeaseTests(IntegrationFixture fixture) : IAsyncLifetime
         Assert.Equal("failed", status);
         var lastError = await fixture.DbScalarAsync<string>(
             "select last_error from jobqueue.jobs where idempotency_key = 'poison:1'");
-        Assert.Equal("bail expiré, tentatives épuisées", lastError);
+        Assert.Equal("lease expired, attempts exhausted", lastError);
 
         var afterSweep = await worker.ClaimAsync(workerId: "crashy-worker");
         Assert.Equal(HttpStatusCode.NoContent, afterSweep.StatusCode);
@@ -142,7 +142,7 @@ public sealed class LeaseTests(IntegrationFixture fixture) : IAsyncLifetime
     [Fact]
     public async Task Complete_IsIdempotent_ReplayDoesNotRewrite()
     {
-        // Rejouer le même complete avec le même token renvoie 200 sans réécrire.
+        // Replaying the same complete with the same token returns 200 without rewriting.
         using var producer = fixture.ClientWithKey(_producerKey);
         using var worker = fixture.ClientWithKey(_workerKey);
 
@@ -158,12 +158,12 @@ public sealed class LeaseTests(IntegrationFixture fixture) : IAsyncLifetime
         Assert.Equal(HttpStatusCode.OK, replay.StatusCode);
         Assert.Equal("done", (await replay.JsonAsync())["status"]!.GetValue<string>());
 
-        // Le résultat d'origine n'a pas été écrasé par le rejeu.
+        // The original result was not overwritten by the replay.
         var value = await fixture.DbScalarAsync<int>(
             "select (result->>'value')::int from jobqueue.jobs where id = @Id", new { Id = jobId });
         Assert.Equal(1, value);
 
-        // Un seul évènement leased -> done dans la piste d'audit.
+        // A single leased -> done event in the audit trail.
         var doneEvents = await fixture.DbScalarAsync<long>(
             "select count(*) from jobqueue.job_events where job_id = @Id and to_status = 'done'",
             new { Id = jobId });
@@ -173,8 +173,8 @@ public sealed class LeaseTests(IntegrationFixture fixture) : IAsyncLifetime
     [Fact]
     public async Task Complete_Failure_RetriesThenFails()
     {
-        // complete(erreur) : retour en pending tant qu'il reste des tentatives,
-        // failed quand elles sont épuisées.
+        // complete(error): back to pending while attempts remain, failed once
+        // they are exhausted.
         using var producer = fixture.ClientWithKey(_producerKey);
         using var worker = fixture.ClientWithKey(_workerKey);
 

@@ -29,18 +29,18 @@ public sealed class ScopeIsolationTests(IntegrationFixture fixture) : IAsyncLife
         using var producer = fixture.ClientWithKey(_producerKey);
         using var worker = fixture.ClientWithKey(_workerKey);
 
-        // Un producteur sur les routes worker : 403.
+        // A producer on the worker routes: 403.
         Assert.Equal(HttpStatusCode.Forbidden, (await producer.ClaimAsync()).StatusCode);
         Assert.Equal(HttpStatusCode.Forbidden, (await producer.HeartbeatAsync(1, Guid.NewGuid())).StatusCode);
         Assert.Equal(HttpStatusCode.Forbidden,
             (await producer.CompleteAsync(1, Guid.NewGuid(), "success")).StatusCode);
 
-        // Un worker sur les routes producer : 403.
+        // A worker on the producer routes: 403.
         Assert.Equal(HttpStatusCode.Forbidden, (await worker.EnqueueAsync("scope:1", Kind)).StatusCode);
         Assert.Equal(HttpStatusCode.Forbidden, (await worker.GetAsync("/api/v1/jobs/1")).StatusCode);
         Assert.Equal(HttpStatusCode.Forbidden, (await worker.GetAsync("/api/v1/jobs/by-key/x")).StatusCode);
 
-        // Producer et worker sur les routes admin : 403.
+        // Producer and worker on the admin routes: 403.
         foreach (var client in new[] { producer, worker })
         {
             Assert.Equal(HttpStatusCode.Forbidden, (await client.GetAsync("/api/v1/jobs?status=pending")).StatusCode);
@@ -55,7 +55,7 @@ public sealed class ScopeIsolationTests(IntegrationFixture fixture) : IAsyncLife
     [Fact]
     public async Task AdminScope_HasFullAccess()
     {
-        // « admin (tout + dashboard) » : le scope admin passe sur les routes des autres.
+        // "admin (everything + dashboard)": the admin scope passes on the others' routes.
         using var admin = fixture.ClientWithKey(_adminKey);
 
         Assert.Equal(HttpStatusCode.Created, (await admin.EnqueueAsync("admin:1", Kind)).StatusCode);

@@ -1,67 +1,67 @@
 # hopper-jobqueue
 
-File de travaux HTTP entre des **producteurs quelconques** (scripts, applications, webhooks,
-`curl`…) et un ou plusieurs **workers derrière NAT** qui ne peuvent faire que des appels
-HTTPS sortants. Le service stocke et distribue des jobs avec une sémantique de **bail**
-(lease) ; il n'exécute rien et n'appelle jamais rien vers l'extérieur — les producteurs
-relisent l'état par `GET /jobs/{id}`.
+HTTP work queue between **arbitrary producers** (scripts, applications, webhooks,
+`curl`…) and one or more **workers behind NAT** that can only make outbound HTTPS
+calls. The service stores and distributes jobs with **lease** semantics; it executes
+nothing and never calls anything external — producers re-read state via
+`GET /jobs/{id}`.
 
-Stack : .NET 10 (minimal API + Razor Pages), PostgreSQL 17, Npgsql + Dapper, DbUp,
-Serilog (console JSON), xUnit + Testcontainers.
+Stack: .NET 10 (minimal API + Razor Pages), PostgreSQL 17, Npgsql + Dapper, DbUp,
+Serilog (JSON console), xUnit + Testcontainers.
 
-## Démarrage rapide (dev)
+## Quick start (dev)
 
 ```bash
-docker network create traefik-public   # une fois (partagé avec Traefik en prod)
-cp .env.example .env                   # renseigner HOPPER_DB_PASSWORD
-docker compose up -d                   # compose.override.yaml publie :8080 + dotnet watch
+docker network create traefik-public   # once (shared with Traefik in prod)
+cp .env.example .env                   # set HOPPER_DB_PASSWORD
+docker compose up -d                   # compose.override.yaml publishes :8080 + dotnet watch
 curl http://localhost:8080/healthz
 ```
 
-Le dashboard est sur `http://localhost:8080/admin`. Au premier démarrage, si la table des
-clés est vide, une clé admin d'amorçage est écrite **une seule fois** dans les logs
-(`docker compose logs hopper | grep bootstrap`). S'en servir pour se connecter, déclarer
-une file (`/admin/kinds`), créer les vraies clés (`/admin/keys`), puis **révoquer la clé
-d'amorçage** — elle est passée dans les logs.
+The dashboard is at `http://localhost:8080/admin`. On first start, if the key table is
+empty, a bootstrap admin key is written **once** to the logs
+(`docker compose logs hopper | grep bootstrap`). Use it to sign in, declare a kind
+(`/admin/kinds`), create the real keys (`/admin/keys`), then **revoke the bootstrap
+key** — it went through the logs.
 
-Tests (base PostgreSQL réelle via Testcontainers, Docker requis) :
+Tests (real PostgreSQL via Testcontainers, Docker required):
 
 ```bash
 dotnet test
 ```
 
-## Variables d'environnement
+## Environment variables
 
-| Variable | Rôle |
+| Variable | Purpose |
 |---|---|
-| `HOPPER_DB_CONNECTIONSTRING` | chaîne de connexion Npgsql (**requise**) — composée automatiquement par `compose.yaml` à partir de `HOPPER_DB_PASSWORD` |
-| `HOPPER_DB_PASSWORD` | mot de passe PostgreSQL, lu depuis `.env` par compose |
-| `HOPPER_BOOTSTRAP_ADMIN_KEY` | optionnelle — clé admin d'amorçage fournie (`hjq_admin_{32 base62}`) au lieu d'une clé générée + loguée |
-| `HOPPER_PUBLIC_HOST` | hôte public du routeur Traefik (ex. `hopper.exemple.ch`) |
-| `HOPPER_ADMIN_IP_ALLOWLIST` | plages IP autorisées sur `/admin` (middleware Traefik) |
-| `HOPPER_LOG_LEVEL` | `Verbose`…`Error`, défaut `Information` |
-| `HOPPER_SWEEP_INTERVAL_SECONDS` | période de la tâche de fond, défaut `60` |
+| `HOPPER_DB_CONNECTIONSTRING` | Npgsql connection string (**required**) — assembled automatically by `compose.yaml` from `HOPPER_DB_PASSWORD` |
+| `HOPPER_DB_PASSWORD` | PostgreSQL password, read from `.env` by compose |
+| `HOPPER_BOOTSTRAP_ADMIN_KEY` | optional — provided bootstrap admin key (`hjq_admin_{32 base62}`) instead of a generated + logged one |
+| `HOPPER_PUBLIC_HOST` | public host of the Traefik router (e.g. `hopper.exemple.ch`) |
+| `HOPPER_ADMIN_IP_ALLOWLIST` | IP ranges allowed on `/admin` (Traefik middleware) |
+| `HOPPER_LOG_LEVEL` | `Verbose`…`Error`, default `Information` |
+| `HOPPER_SWEEP_INTERVAL_SECONDS` | background task period, default `60` |
 
-Aucun secret en fichier : tout passe par l'environnement (`.env` est ignoré par git).
+No secrets in files: everything goes through the environment (`.env` is git-ignored).
 
-## Modèle
+## Model
 
-- Un job appartient à une file (`kind`), **déclarée avant usage** (dashboard → Files).
-  `kind` inconnu ⇒ `400` avec la liste des kinds autorisés pour la clé.
-- Statuts : `pending → leased → done | failed | expired | cancelled`. `attempts`
-  s'incrémente **au claim** (protection poison message). Un job dont `expires_at` est
-  dépassé n'est jamais distribué. `done` et `cancelled` sont terminaux (`requeue` admin
-  possible depuis `failed`/`expired`/`cancelled`, jamais depuis `done`).
-- Chaque transition écrit dans `jobqueue.job_events` (piste d'audit du dashboard).
-- Clés API : `hjq_{scope}_{32 base62}`, scopes `producer` / `worker` / `admin` (admin =
-  tout). Stockage SHA-256, comparaison en temps constant, préfixe en clair pour
-  l'identification. Une clé par producteur et par worker, chacune avec ses
-  `allowed_kinds` : la révocation reste ciblée.
+- A job belongs to a queue (`kind`), **declared before use** (dashboard → Kinds).
+  Unknown `kind` ⇒ `400` with the list of kinds allowed for the key.
+- Statuses: `pending → leased → done | failed | expired | cancelled`. `attempts`
+  increments **at claim** (poison message protection). A job whose `expires_at` has
+  passed is never distributed. `done` and `cancelled` are terminal (admin `requeue`
+  possible from `failed`/`expired`/`cancelled`, never from `done`).
+- Every transition writes to `jobqueue.job_events` (the dashboard's audit trail).
+- API keys: `hjq_{scope}_{32 base62}`, scopes `producer` / `worker` / `admin` (admin =
+  everything). SHA-256 storage, constant-time comparison, clear-text prefix for
+  identification. One key per producer and per worker, each with its own
+  `allowed_kinds`: revocation stays targeted.
 
 ## API
 
-Préfixe `/api/v1`, JSON `camelCase`, erreurs en `application/problem+json`,
-`Authorization: Bearer hjq_…`. Exemples `curl` (remplacer la clé et l'hôte) :
+Prefix `/api/v1`, `camelCase` JSON, errors as `application/problem+json`,
+`Authorization: Bearer hjq_…`. `curl` examples (replace the key and host):
 
 ### `POST /jobs` — scope `producer`
 
@@ -71,33 +71,33 @@ curl -s https://hopper.exemple.ch/api/v1/jobs \
   -d '{
     "idempotencyKey": "cron:2026-08-17T03:00",
     "kind": "invoice-ocr",
-    "project": "compta",
+    "project": "accounting",
     "payload": { "documentRef": "s3://bucket/doc.pdf" },
     "ttlSeconds": 86400,
     "maxAttempts": 3
   }'
 # 201 {"id":42,"status":"pending","created":true}
-# 200 {"id":42,"status":"pending","created":false}  si la clé d'idempotence existe déjà (rejeu sans erreur)
-# 400 si champ requis manquant, payload > 32 Ko, ou kind inconnu/non autorisé
+# 200 {"id":42,"status":"pending","created":false}  if the idempotency key already exists (replay without error)
+# 400 if a required field is missing, payload > 32 KiB, or kind unknown/not allowed
 ```
 
-`project` est un simple libellé de regroupement, optionnel. `ttlSeconds` (max 604800) et
-`maxAttempts` (max 10) surchargent les défauts de la file.
+`project` is a simple grouping label, optional. `ttlSeconds` (max 604800) and
+`maxAttempts` (max 10) override the queue's defaults.
 
 ### `POST /jobs/claim` — scope `worker`
 
 ```bash
 curl -s https://hopper.exemple.ch/api/v1/jobs/claim \
   -H "Authorization: Bearer $WORKER_KEY" -H 'Content-Type: application/json' \
-  -d '{ "workerId": "worker-atelier", "leaseSeconds": 1200, "kinds": ["invoice-ocr"] }'
-# 200 job complet, avec leaseToken + leaseUntil — conserver le leaseToken
-# 204 file vide — re-poller plus tard (30 s est un bon rythme)
-# 403 si aucun des kinds demandés n'est autorisé pour la clé
+  -d '{ "workerId": "shop-worker", "leaseSeconds": 1200, "kinds": ["invoice-ocr"] }'
+# 200 full job, with leaseToken + leaseUntil — keep the leaseToken
+# 204 queue empty — poll again later (30 s is a good pace)
+# 403 if none of the requested kinds is allowed for the key
 ```
 
-`kinds` omis = toutes les files de la clé. Sélection équitable entre files : le plus vieux
-job de chaque file éligible, puis tirage au hasard — une grosse file n'affame pas les
-petites. Les files en pause (`enabled = false`) ne distribuent pas.
+`kinds` omitted = all the key's queues. Fair selection across queues: the oldest job of
+each eligible queue, then a random pick — a big queue does not starve the small ones.
+Paused queues (`enabled = false`) do not distribute.
 
 ### `POST /jobs/{id}/heartbeat` — scope `worker`
 
@@ -105,8 +105,8 @@ petites. Les files en pause (`enabled = false`) ne distribuent pas.
 curl -s https://hopper.exemple.ch/api/v1/jobs/42/heartbeat \
   -H "Authorization: Bearer $WORKER_KEY" -H 'Content-Type: application/json' \
   -d '{ "leaseToken": "'$LEASE_TOKEN'", "leaseSeconds": 1200 }'
-# 200 {"id":42,"leaseUntil":"…"} — bail prolongé
-# 409 bail perdu : abandonner le job, un autre worker peut l'avoir repris
+# 200 {"id":42,"leaseUntil":"…"} — lease extended
+# 409 lease lost: abandon the job, another worker may have taken it over
 ```
 
 ### `POST /jobs/{id}/complete` — scope `worker`
@@ -116,134 +116,135 @@ curl -s https://hopper.exemple.ch/api/v1/jobs/42/complete \
   -H "Authorization: Bearer $WORKER_KEY" -H 'Content-Type: application/json' \
   -d '{ "leaseToken": "'$LEASE_TOKEN'", "outcome": "success",
         "result": { "report": "…", "costUsd": 0.42, "durationMs": 91000 } }'
-# 200 {"id":42,"status":"done",…}   statut final calculé : done, pending (retry) ou failed
-# 409 leaseToken périmé — un worker zombie ne peut pas écraser le résultat d'un autre
-# 400 si result > 256 Ko (mettre les gros livrables ailleurs, passer une référence)
+# 200 {"id":42,"status":"done",…}   computed final status: done, pending (retry) or failed
+# 409 stale leaseToken — a zombie worker cannot overwrite someone else's result
+# 400 if result > 256 KiB (store large deliverables elsewhere, pass a reference)
 ```
 
-`outcome: "failure"` exige `error` ; le job repart en `pending` s'il reste des tentatives,
-sinon `failed`. Rejouer le même complete avec le même token renvoie `200` sans réécrire.
+`outcome: "failure"` requires `error`; the job goes back to `pending` if attempts
+remain, otherwise `failed`. Replaying the same complete with the same token returns
+`200` without rewriting.
 
-### `GET /jobs/{id}` et `GET /jobs/by-key/{idempotencyKey}` — scope `producer`
+### `GET /jobs/{id}` and `GET /jobs/by-key/{idempotencyKey}` — scope `producer`
 
 ```bash
 curl -s https://hopper.exemple.ch/api/v1/jobs/42 -H "Authorization: Bearer $PRODUCER_KEY"
 curl -s https://hopper.exemple.ch/api/v1/jobs/by-key/cron:2026-08-17T03:00 \
   -H "Authorization: Bearer $PRODUCER_KEY"
-# 200 état + result + lastError (jamais le leaseToken) ; 404 si le kind n'est pas
-# dans les allowed_kinds de la clé — jamais 403, pas d'énumération
+# 200 state + result + lastError (never the leaseToken); 404 if the kind is not in
+# the key's allowed_kinds — never 403, no enumeration
 ```
 
 ### Administration — scope `admin`
 
 ```bash
 curl -s 'https://hopper.exemple.ch/api/v1/jobs?status=failed&kind=invoice-ocr&q=timeout&page=1' \
-  -H "Authorization: Bearer $ADMIN_KEY"                    # liste paginée (50/page)
+  -H "Authorization: Bearer $ADMIN_KEY"                    # paginated list (50/page)
 curl -s https://hopper.exemple.ch/api/v1/jobs/42 -H "Authorization: Bearer $ADMIN_KEY"
-                                                           # détail + timeline job_events
+                                                           # detail + job_events timeline
 curl -s -X POST https://hopper.exemple.ch/api/v1/jobs/42/requeue -H "Authorization: Bearer $ADMIN_KEY"
 curl -s -X POST https://hopper.exemple.ch/api/v1/jobs/42/cancel  -H "Authorization: Bearer $ADMIN_KEY"
 curl -s https://hopper.exemple.ch/api/v1/stats -H "Authorization: Bearer $ADMIN_KEY"
-# stats : compte par statut, âge du plus vieux pending, débit 24 h — si l'âge du plus
-# vieux pending grimpe, le worker est mort ou saturé ; c'est LA métrique à surveiller
+# stats: count per status, oldest pending age, 24 h throughput — if the oldest pending
+# age climbs, the worker is dead or saturated; that is THE metric to watch
 ```
 
-### Santé
+### Health
 
 ```bash
-curl -s https://hopper.exemple.ch/healthz   # vivant, sans toucher la base
-curl -s https://hopper.exemple.ch/readyz    # vérifie la connexion PostgreSQL
+curl -s https://hopper.exemple.ch/healthz   # alive, without touching the database
+curl -s https://hopper.exemple.ch/readyz    # checks the PostgreSQL connection
 ```
 
-## Cycle complet (exemple bout en bout)
+## Full cycle (end-to-end example)
 
 ```bash
 H=https://hopper.exemple.ch/api/v1
-# 1. le producteur dépose
+# 1. the producer enqueues
 JOB=$(curl -s $H/jobs -H "Authorization: Bearer $PRODUCER_KEY" -H 'Content-Type: application/json' \
   -d '{"idempotencyKey":"demo:1","kind":"invoice-ocr","payload":{"ref":"doc-123"}}')
 ID=$(echo $JOB | jq -r .id)
 
-# 2. le worker (derrière NAT) réclame
+# 2. the worker (behind NAT) claims
 CLAIM=$(curl -s $H/jobs/claim -H "Authorization: Bearer $WORKER_KEY" -H 'Content-Type: application/json' \
   -d '{"workerId":"w1","leaseSeconds":1200}')
 TOKEN=$(echo $CLAIM | jq -r .leaseToken)
 
-# 3. pendant le traitement, il prolonge le bail
+# 3. while working, it extends the lease
 curl -s $H/jobs/$ID/heartbeat -H "Authorization: Bearer $WORKER_KEY" -H 'Content-Type: application/json' \
   -d '{"leaseToken":"'$TOKEN'"}'
 
-# 4. il rend le résultat
+# 4. it returns the result
 curl -s $H/jobs/$ID/complete -H "Authorization: Bearer $WORKER_KEY" -H 'Content-Type: application/json' \
   -d '{"leaseToken":"'$TOKEN'","outcome":"success","result":{"report":"ok"}}'
 
-# 5. le producteur relit quand il veut
+# 5. the producer re-reads whenever it wants
 curl -s $H/jobs/by-key/demo:1 -H "Authorization: Bearer $PRODUCER_KEY"
 ```
 
-## Déploiement (Traefik + Docker)
+## Deployment (Traefik + Docker)
 
-Le conteneur ne publie **aucun port** ; Traefik le joint par le réseau `traefik-public`,
-PostgreSQL vit sur `hopper-internal` et n'est jamais exposé. TLS est terminé par Traefik —
-le service n'active ni HTTPS ni HSTS et fait confiance à `X-Forwarded-For`/`-Proto`
-(`KnownIPNetworks`/`KnownProxies` vidés : l'IP de Traefik change à chaque recréation).
+The container publishes **no port**; Traefik reaches it through the `traefik-public`
+network, PostgreSQL lives on `hopper-internal` and is never exposed. TLS is terminated
+by Traefik — the service enables neither HTTPS nor HSTS and trusts
+`X-Forwarded-For`/`-Proto` (`KnownIPNetworks`/`KnownProxies` cleared: Traefik's IP
+changes on every recreation).
 
 ```bash
-docker network create traefik-public        # si Traefik ne l'a pas déjà créé
-cp .env.example .env                        # HOPPER_DB_PASSWORD, HOPPER_PUBLIC_HOST, allowlist IP
+docker network create traefik-public        # if Traefik has not created it already
+cp .env.example .env                        # HOPPER_DB_PASSWORD, HOPPER_PUBLIC_HOST, IP allowlist
 docker compose -f compose.yaml up -d --build
 ```
 
-**Toujours `-f compose.yaml` en production** : sans lui, `compose.override.yaml` (dev)
-publierait le port et monterait le code.
+**Always `-f compose.yaml` in production**: without it, `compose.override.yaml` (dev)
+would publish the port and mount the code.
 
-`/admin` est en plus restreint par IP au niveau Traefik (`HOPPER_ADMIN_IP_ALLOWLIST`) —
-défense supplémentaire, la clé admin reste requise derrière. Connexion dynamique :
-prévoir une plage large plutôt que de désactiver la protection.
+`/admin` is additionally IP-restricted at the Traefik level
+(`HOPPER_ADMIN_IP_ALLOWLIST`) — an extra defence, the admin key is still required
+behind it. Dynamic connection: plan a wide range rather than disabling the protection.
 
-L'API est publique sur internet : limites de corps Kestrel (64 Ko, 512 Ko sur
-`/complete`) doublées d'un buffering Traefik, rate limiting par clé API (authentifié) et
-par IP (non authentifié), 404 neutres, pas d'en-tête `Server`, pas de CORS.
+The API is public on the internet: Kestrel body limits (64 KiB, 512 KiB on
+`/complete`) doubled by Traefik buffering, rate limiting per API key (authenticated)
+and per IP (unauthenticated), neutral 404s, no `Server` header, no CORS.
 
-### PostgreSQL — version épinglée
+### PostgreSQL — pinned version
 
-L'image est **`postgres:17`, jamais `latest`** : une image qui passe en majeure suivante
-refuse de démarrer sur un répertoire de données existant et impose un `pg_upgrade` ou un
-cycle dump/restore. Pour changer de majeure : sauvegarde (`ops/backup.sh`), montée de
-version dans `compose.yaml`, restauration (`ops/restore.sh`).
+The image is **`postgres:17`, never `latest`**: an image that moves to the next major
+refuses to start on an existing data directory and forces a `pg_upgrade` or a
+dump/restore cycle. To change major version: back up (`ops/backup.sh`), bump the
+version in `compose.yaml`, restore (`ops/restore.sh`).
 
-### Arrêt propre
+### Clean shutdown
 
-`stop_grace_period: 30s` dans compose > `ShutdownTimeout` ASP.NET (20 s) : la requête
-HTTP en cours se termine sur `SIGTERM`.
+`stop_grace_period: 30s` in compose > ASP.NET's `ShutdownTimeout` (20 s): the in-flight
+HTTP request finishes on `SIGTERM`.
 
-## Sauvegarde et restauration
+## Backup and restore
 
-`pg_dump` quotidien compressé (format custom), rétention 7 quotidiennes + 4
-hebdomadaires. Cron sur l'hôte :
+Daily compressed `pg_dump` (custom format), retention 7 daily + 4 weekly. Host cron:
 
 ```cron
 0 3 * * *  cd /opt/hopper-jobqueue && ./ops/backup.sh /var/backups/hopper-jobqueue >> /var/log/hopper-backup.log 2>&1
 ```
 
-Restauration (procédure **exécutée et vérifiée** : volume détruit puis restauré à
-l'identique — jobs, événements, clés — lors de la mise en place) :
+Restore (procedure **performed and verified**: volume destroyed then restored
+identically — jobs, events, keys — during setup):
 
 ```bash
 ./ops/restore.sh /var/backups/hopper-jobqueue/daily/hopper_YYYYMMDD_HHMMSS.dump
-# 1. arrête l'API (aucune connexion pendant l'opération)
-# 2. pg_restore --create --clean : la base hopper est recréée depuis le dump
-# 3. relance l'API ; vérifier /readyz puis le dashboard
+# 1. stops the API (no connections during the operation)
+# 2. pg_restore --create --clean: the hopper database is recreated from the dump
+# 3. restarts the API; check /readyz then the dashboard
 ```
 
-Une sauvegarde jamais restaurée n'est pas une sauvegarde : refaire ce drill après tout
-changement de version majeure de PostgreSQL.
+A backup that was never restored is not a backup: redo this drill after any PostgreSQL
+major version change.
 
-## Développement
+## Development
 
-- `docker compose up -d` : PostgreSQL + API en `dotnet watch` sur
-  `http://localhost:8080` (rechargement à chaud du code monté).
-- Dashboard en dev : utiliser `http://localhost:8080/admin` (le cookie de session est
-  `Secure` ; les navigateurs l'acceptent sur `localhost`, pas sur une IP nue).
-- `dotnet test` : les 10 scénarios du brief (§9) + compléments, sur base réelle.
-  Testcontainers a besoin du démon Docker et tire `postgres:17`.
+- `docker compose up -d`: PostgreSQL + API under `dotnet watch` on
+  `http://localhost:8080` (hot reload of the mounted code).
+- Dashboard in dev: use `http://localhost:8080/admin` (the session cookie is `Secure`;
+  browsers accept it on `localhost`, not on a bare IP).
+- `dotnet test`: the brief's 10 scenarios (§9) + extras, on a real database.
+  Testcontainers needs the Docker daemon and pulls `postgres:17`.

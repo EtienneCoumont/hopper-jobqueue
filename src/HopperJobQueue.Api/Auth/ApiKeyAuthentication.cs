@@ -2,7 +2,7 @@ using HopperJobQueue.Api.Domain;
 
 namespace HopperJobQueue.Api.Auth;
 
-/// <summary>Métadonnée d'endpoint : scopes autorisés (admin passe partout).</summary>
+/// <summary>Endpoint metadata: allowed scopes (admin passes everywhere).</summary>
 public sealed record RequiredScopes(string[] Scopes);
 
 public static class ApiKeyAuthentication
@@ -17,9 +17,9 @@ public static class ApiKeyAuthentication
         builder.WithMetadata(new RequiredScopes(scopes));
 
     /// <summary>
-    /// Résout la clé API du header <c>Authorization: Bearer hjq_…</c> et la range dans
-    /// <see cref="HttpContext.Items"/>. Placé avant le rate limiter pour que celui-ci
-    /// partitionne par clé (authentifié) ou par IP (non authentifié).
+    /// Resolves the API key from the <c>Authorization: Bearer hjq_…</c> header and stores
+    /// it in <see cref="HttpContext.Items"/>. Placed before the rate limiter so that it
+    /// partitions by key (authenticated) or by IP (unauthenticated).
     /// </summary>
     public static IApplicationBuilder UseApiKeyAuthentication(this IApplicationBuilder app) =>
         app.Use(async (context, next) =>
@@ -39,8 +39,8 @@ public static class ApiKeyAuthentication
                     }
                     else
                     {
-                        // Information, pas Warning : le bruit de fond des scanners sur une IP
-                        // publique saturerait des alertes. Jamais la clé entière dans les logs.
+                        // Information, not Warning: the background noise of scanners on a
+                        // public IP would saturate alerts. Never the full key in the logs.
                         var logger = context.RequestServices
                             .GetRequiredService<ILoggerFactory>()
                             .CreateLogger("HopperJobQueue.Auth");
@@ -58,8 +58,9 @@ public static class ApiKeyAuthentication
         });
 
     /// <summary>
-    /// Applique les <see cref="RequiredScopes"/> de l'endpoint résolu : 401 sans clé valide,
-    /// 403 si le scope ne correspond pas. Le scope <c>admin</c> passe partout (« tout »).
+    /// Enforces the resolved endpoint's <see cref="RequiredScopes"/>: 401 without a valid
+    /// key, 403 if the scope does not match. The <c>admin</c> scope passes everywhere
+    /// ("everything").
     /// </summary>
     public static IApplicationBuilder UseScopeEnforcement(this IApplicationBuilder app) =>
         app.Use(async (context, next) =>

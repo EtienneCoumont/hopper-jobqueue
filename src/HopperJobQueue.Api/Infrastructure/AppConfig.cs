@@ -1,8 +1,8 @@
 namespace HopperJobQueue.Api.Infrastructure;
 
 /// <summary>
-/// Configuration du service, lue exclusivement depuis les variables d'environnement
-/// préfixées <c>HOPPER_</c> (le préfixe est retiré par le provider de configuration).
+/// Service configuration, read exclusively from <c>HOPPER_</c>-prefixed environment
+/// variables (the prefix is stripped by the configuration provider).
 /// </summary>
 public sealed class AppConfig
 {

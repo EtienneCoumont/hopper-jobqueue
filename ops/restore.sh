@@ -1,28 +1,28 @@
 #!/usr/bin/env bash
-# Restauration d'une sauvegarde produite par ops/backup.sh.
+# Restore a backup produced by ops/backup.sh.
 #
-# Arrête l'API, recrée la base `hopper` depuis le dump, puis redémarre l'API
-# (les migrations DbUp revalident le schéma au démarrage).
+# Stops the API, recreates the `hopper` database from the dump, then restarts the
+# API (DbUp migrations revalidate the schema at startup).
 #
 #   ./ops/restore.sh /var/backups/hopper-jobqueue/daily/hopper_20260817_030000.dump
 set -euo pipefail
 
-# -f compose.yaml explicite : ne jamais laisser compose.override.yaml (dev) s'appliquer ici.
+# Explicit -f compose.yaml: never let compose.override.yaml (dev) apply here.
 COMPOSE="docker compose -f compose.yaml"
 
-DUMP=${1:?usage: restore.sh <fichier.dump>}
+DUMP=${1:?usage: restore.sh <file.dump>}
 test -s "$DUMP"
 
-echo "Arrêt de l'API (aucune écriture ni connexion pendant la restauration)…"
+echo "Stopping the API (no writes or connections during the restore)…"
 $COMPOSE stop hopper
 
-echo "Restauration de $DUMP…"
-# --create --clean : la base hopper est supprimée puis recréée depuis le dump ;
-# la connexion se fait sur la base `postgres` le temps de l'opération.
+echo "Restoring $DUMP…"
+# --create --clean: the hopper database is dropped then recreated from the dump;
+# the connection goes through the `postgres` database for the duration.
 $COMPOSE exec -T hopper-db pg_restore -U hopper -d postgres \
     --create --clean --if-exists --exit-on-error < "$DUMP"
 
-echo "Redémarrage de l'API…"
+echo "Restarting the API…"
 $COMPOSE up -d hopper
 
-echo "OK — vérifier /readyz et le dashboard."
+echo "OK — check /readyz and the dashboard."

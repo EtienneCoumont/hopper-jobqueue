@@ -34,7 +34,7 @@ public sealed class KeysModel(ApiKeyStore apiKeyStore, JobStore jobStore) : Page
         var (_, plaintext) = await apiKeyStore.CreateAsync(
             name.Trim(), scope, validKinds, HttpContext.RequestAborted);
 
-        // La clé en clair transite une seule fois, via TempData, puis disparaît.
+        // The clear-text key travels exactly once, via TempData, then disappears.
         CreatedKey = plaintext;
         return RedirectToPage();
     }

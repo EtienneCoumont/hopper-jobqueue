@@ -21,8 +21,8 @@ public static class DapperConfig
     }
 
     /// <summary>
-    /// Npgsql lit un <c>timestamptz</c> comme <see cref="DateTime"/> (Kind=Utc) ; ce handler
-    /// garantit le mapping vers <see cref="DateTimeOffset"/> imposé par le projet.
+    /// Npgsql reads a <c>timestamptz</c> as <see cref="DateTime"/> (Kind=Utc); this handler
+    /// guarantees the mapping to the <see cref="DateTimeOffset"/> the project mandates.
     /// </summary>
     private sealed class DateTimeOffsetHandler : SqlMapper.TypeHandler<DateTimeOffset>
     {

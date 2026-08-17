@@ -32,7 +32,7 @@ try
     builder.WebHost.ConfigureKestrel(kestrel =>
     {
         kestrel.AddServerHeader = false;
-        // Limite globale basse (64 Ko) ; /complete est relevé à 512 Ko par middleware.
+        // Low global limit (64 KiB); /complete is raised to 512 KiB by middleware.
         kestrel.Limits.MaxRequestBodySize = 64 * 1024;
     });
     builder.Host.ConfigureHostOptions(host => host.ShutdownTimeout = TimeSpan.FromSeconds(20));
@@ -51,14 +51,14 @@ try
     builder.Services.Configure<ForwardedHeadersOptions>(options =>
     {
         options.ForwardedHeaders = ForwardedHeaders.XForwardedFor | ForwardedHeaders.XForwardedProto;
-        // Indispensable derrière Traefik en Docker : l'IP du proxy change à chaque
-        // recréation, la liste blanche par défaut rejetterait les en-têtes en silence.
+        // Indispensable behind Traefik in Docker: the proxy's IP changes on every
+        // recreation, the default allowlist would silently reject the headers.
         options.KnownIPNetworks.Clear();
         options.KnownProxies.Clear();
     });
 
-    // Deux étages : fenêtre glissante par clé API pour les requêtes authentifiées
-    // (le polling des workers est légitime), fenêtre par IP pour tout le reste.
+    // Two tiers: sliding window per API key for authenticated requests (worker
+    // polling is legitimate), per-IP window for everything else.
     builder.Services.AddRateLimiter(limiter =>
     {
         limiter.RejectionStatusCode = StatusCodes.Status429TooManyRequests;
@@ -103,7 +103,7 @@ try
             options.SlidingExpiration = true;
             options.Events = new CookieAuthenticationEvents
             {
-                // Une clé révoquée invalide la session au prochain aller-retour.
+                // A revoked key invalidates the session on the next round-trip.
                 OnValidatePrincipal = async context =>
                 {
                     var idClaim = context.Principal?.FindFirstValue(ClaimTypes.NameIdentifier);
@@ -127,9 +127,10 @@ try
     builder.Services.AddAntiforgery(options =>
     {
         options.Cookie.HttpOnly = true;
-        // SameAsRequest et non Always : derrière Traefik la requête est vue en HTTPS
-        // (X-Forwarded-Proto), le cookie est donc Secure en production — mais Always
-        // ferait lever CheckSSLConfig en dev, où le port est servi en HTTP direct.
+        // SameAsRequest, not Always: behind Traefik the request is seen as HTTPS
+        // (X-Forwarded-Proto), so the cookie is Secure in production — but Always
+        // would make CheckSSLConfig throw in dev, where the port is served over
+        // plain HTTP.
         options.Cookie.SecurePolicy = CookieSecurePolicy.SameAsRequest;
         options.Cookie.SameSite = SameSiteMode.Strict;
         options.Cookie.Path = "/admin";
@@ -142,7 +143,7 @@ try
 
     var app = builder.Build();
 
-    // Migrations avant d'accepter du trafic ; échec = sortie en code non nul.
+    // Migrations before accepting traffic; failure = non-zero exit.
     DatabaseMigrator.Run(config.ConnectionString, app.Logger);
     await using (var scope = app.Services.CreateAsyncScope())
     {
@@ -154,15 +155,15 @@ try
 
     app.UseExceptionHandler(errorApp => errorApp.Run(async context =>
     {
-        // problem+json neutre : jamais de trace d'appels ni de détail interne en réponse.
+        // Neutral problem+json: never a stack trace or internal detail in a response.
         await Results.Problem(statusCode: StatusCodes.Status500InternalServerError)
             .ExecuteAsync(context);
     }));
 
     app.UseSerilogRequestLogging();
 
-    // /complete accepte un result jusqu'à 256 Ko : limite de corps relevée à 512 Ko,
-    // toutes les autres routes restent à la limite Kestrel globale de 64 Ko.
+    // /complete accepts a result up to 256 KiB: body limit raised to 512 KiB, every
+    // other route stays at the global 64 KiB Kestrel limit.
     app.Use(async (context, next) =>
     {
         if (context.Request.Method == HttpMethods.Post
@@ -214,7 +215,7 @@ try
         }
         catch
         {
-            // Sans détail d'erreur : la route est publique.
+            // No error detail: the route is public.
             return Results.StatusCode(StatusCodes.Status503ServiceUnavailable);
         }
     });
@@ -238,5 +239,5 @@ finally
 static LogEventLevel ParseLogLevel(string? raw) =>
     Enum.TryParse<LogEventLevel>(raw, ignoreCase: true, out var level) ? level : LogEventLevel.Information;
 
-// Expose le point d'entrée aux tests d'intégration (WebApplicationFactory).
+// Exposes the entry point to the integration tests (WebApplicationFactory).
 public partial class Program;

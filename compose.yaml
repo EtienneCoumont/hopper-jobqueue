@@ -1,6 +1,6 @@
-# hopper-jobqueue derrière Traefik. Aucun port publié sur l'hôte : Traefik atteint
-# le service par le réseau Docker, PostgreSQL reste sur le réseau interne.
-# Variables attendues dans .env : voir .env.example.
+# hopper-jobqueue behind Traefik. No port published on the host: Traefik reaches
+# the service through the Docker network, PostgreSQL stays on the internal network.
+# Variables expected in .env: see .env.example.
 
 services:
   hopper:
@@ -11,13 +11,13 @@ services:
       - "8080"
     environment:
       HOPPER_DB_CONNECTIONSTRING: >-
-        Host=hopper-db;Port=5432;Database=hopper;Username=hopper;Password=${HOPPER_DB_PASSWORD:?définir HOPPER_DB_PASSWORD dans .env}
+        Host=hopper-db;Port=5432;Database=hopper;Username=hopper;Password=${HOPPER_DB_PASSWORD:?set HOPPER_DB_PASSWORD in .env}
       HOPPER_BOOTSTRAP_ADMIN_KEY: ${HOPPER_BOOTSTRAP_ADMIN_KEY:-}
       HOPPER_LOG_LEVEL: ${HOPPER_LOG_LEVEL:-Information}
     depends_on:
       hopper-db:
         condition: service_healthy
-    # Marge supérieure au ShutdownTimeout d'ASP.NET (20 s) : le job HTTP en cours se termine.
+    # Margin above ASP.NET's ShutdownTimeout (20 s): the in-flight HTTP request finishes.
     stop_grace_period: 30s
     networks:
       - traefik-public
@@ -37,21 +37,21 @@ services:
       - traefik.http.routers.hopper-admin.tls.certresolver=letsencrypt
       - traefik.http.routers.hopper-admin.middlewares=hopper-admin-allow,hopper-buffer
 
-      # /admin restreint par IP — défense supplémentaire, la clé admin reste requise derrière.
-      - traefik.http.middlewares.hopper-admin-allow.ipallowlist.sourcerange=${HOPPER_ADMIN_IP_ALLOWLIST:?définir HOPPER_ADMIN_IP_ALLOWLIST dans .env}
+      # /admin restricted by IP — extra defence, the admin key is still required behind it.
+      - traefik.http.middlewares.hopper-admin-allow.ipallowlist.sourcerange=${HOPPER_ADMIN_IP_ALLOWLIST:?set HOPPER_ADMIN_IP_ALLOWLIST in .env}
 
-      # Filet en amont des limites Kestrel (64 Ko / 512 Ko côté application).
+      # Safety net upstream of the Kestrel limits (64 KiB / 512 KiB application-side).
       - traefik.http.middlewares.hopper-buffer.buffering.maxRequestBodyBytes=1048576
 
   hopper-db:
-    # Version majeure épinglée : jamais `latest`. Un passage de majeure impose un
-    # pg_upgrade ou un cycle dump/restore (voir README).
+    # Major version pinned: never `latest`. A major bump forces a pg_upgrade or a
+    # dump/restore cycle (see README).
     image: postgres:17
     restart: unless-stopped
     environment:
       POSTGRES_DB: hopper
       POSTGRES_USER: hopper
-      POSTGRES_PASSWORD: ${HOPPER_DB_PASSWORD:?définir HOPPER_DB_PASSWORD dans .env}
+      POSTGRES_PASSWORD: ${HOPPER_DB_PASSWORD:?set HOPPER_DB_PASSWORD in .env}
     volumes:
       - hopper-pgdata:/var/lib/postgresql/data
     networks:

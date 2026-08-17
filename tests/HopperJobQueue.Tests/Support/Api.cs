@@ -3,7 +3,7 @@ using System.Text.Json.Nodes;
 
 namespace HopperJobQueue.Tests.Support;
 
-/// <summary>Petits raccourcis HTTP + JSON pour garder les tests lisibles.</summary>
+/// <summary>Small HTTP + JSON shortcuts to keep the tests readable.</summary>
 public static class Api
 {
     public static async Task<HttpResponseMessage> EnqueueAsync(

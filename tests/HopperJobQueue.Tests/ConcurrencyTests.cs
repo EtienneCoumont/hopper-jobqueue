@@ -23,8 +23,8 @@ public sealed class ConcurrencyTests(IntegrationFixture fixture) : IAsyncLifetim
     [Fact]
     public async Task Test1_ConcurrentClaims_NoJobDistributedTwice()
     {
-        // 20 claims en parallèle sur 5 jobs : exactement 5 réussissent, aucun job
-        // distribué deux fois, 15 réponses 204. Le test qui justifie le projet.
+        // 20 parallel claims over 5 jobs: exactly 5 succeed, no job distributed
+        // twice, 15 responses are 204. The test that justifies the project.
         using var producer = fixture.ClientWithKey(_producerKey);
         for (var i = 0; i < 5; i++)
         {
@@ -58,8 +58,8 @@ public sealed class ConcurrencyTests(IntegrationFixture fixture) : IAsyncLifetim
     [Fact]
     public async Task Test2_ConcurrentEnqueues_SingleJobCreated()
     {
-        // 10 POST simultanés avec la même clé d'idempotence : un seul job créé,
-        // les 10 réponses cohérentes.
+        // 10 simultaneous POSTs with the same idempotency key: a single job
+        // created, all 10 responses consistent.
         using var producer = fixture.ClientWithKey(_producerKey);
         var responses = await Task.WhenAll(
             Enumerable.Range(0, 10).Select(_ => producer.EnqueueAsync("same-key", Kind, new { n = 1 })));

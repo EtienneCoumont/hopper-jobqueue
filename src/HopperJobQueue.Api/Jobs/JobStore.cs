@@ -68,8 +68,8 @@ public sealed class JobStore(NpgsqlDataSource dataSource)
     // ---------- enqueue ----------
 
     /// <summary>
-    /// Idempotence en base : <c>on conflict (idempotency_key) do nothing</c> puis relecture —
-    /// jamais de select préalable, sinon deux requêtes simultanées passent toutes les deux.
+    /// Idempotency in the database: <c>on conflict (idempotency_key) do nothing</c> then
+    /// re-read — never a prior select, otherwise two simultaneous requests both get through.
     /// </summary>
     public async Task<EnqueueResult> EnqueueAsync(
         string idempotencyKey, string kind, string? project, string payloadJson,
@@ -105,7 +105,7 @@ public sealed class JobStore(NpgsqlDataSource dataSource)
             await tx.CommitAsync(ct);
         }
 
-        // La clé existe déjà : relecture hors transaction (la ligne gagnante est committée).
+        // The key already exists: re-read outside the transaction (the winning row is committed).
         var existing = await conn.QuerySingleAsync<Job>(
             "select * from jobqueue.jobs where idempotency_key = @IdempotencyKey",
             new { IdempotencyKey = idempotencyKey });
@@ -115,12 +115,12 @@ public sealed class JobStore(NpgsqlDataSource dataSource)
     // ---------- claim ----------
 
     /// <summary>
-    /// Réservation équitable : un candidat par file éligible (le plus vieux), choix au hasard,
-    /// verrouillage <c>for update skip locked</c> — obligatoire, sans lui deux claims
-    /// concurrents peuvent obtenir le même job. Les prédicats d'éligibilité sont répétés dans
-    /// le select verrouillant : en READ COMMITTED, la re-vérification (EvalPlanQual) après une
-    /// modification concurrente s'appuie sur eux pour écarter un job déjà réservé, alors que la
-    /// liste de candidats du sous-select, elle, date du snapshot de départ.
+    /// Fair reservation: one candidate per eligible queue (the oldest), random pick,
+    /// <c>for update skip locked</c> locking — mandatory, without it two concurrent claims
+    /// can get the same job. The eligibility predicates are repeated in the locking select:
+    /// under READ COMMITTED, the re-check (EvalPlanQual) after a concurrent modification
+    /// relies on them to discard an already-reserved job, whereas the sub-select's candidate
+    /// list dates from the starting snapshot.
     /// </summary>
     private const string ClaimSql =
         """
@@ -195,9 +195,9 @@ public sealed class JobStore(NpgsqlDataSource dataSource)
             LeaseSeconds = (double?)leaseSeconds,
         };
 
-        // Sous contention, le candidat désigné peut être raflé entre le snapshot et le verrou
-        // (skip locked ou re-vérification) : l'instruction rend alors zéro ligne alors que la
-        // file n'est pas vide. On réessaie tant qu'il reste des jobs éligibles.
+        // Under contention, the designated candidate can be snatched between the snapshot and
+        // the lock (skip locked or re-check): the statement then returns zero rows although
+        // the queue is not empty. Retry as long as eligible jobs remain.
         for (var attempt = 0; attempt < 50; attempt++)
         {
             ct.ThrowIfCancellationRequested();
@@ -287,7 +287,7 @@ public sealed class JobStore(NpgsqlDataSource dataSource)
             await tx.CommitAsync(ct);
         }
 
-        // Pas de transition : soit rejeu idempotent du même complete, soit bail perdu.
+        // No transition: either an idempotent replay of the same complete, or a lost lease.
         var current = await GetAsync(jobId, ct);
         if (current is null)
         {
@@ -383,7 +383,7 @@ public sealed class JobStore(NpgsqlDataSource dataSource)
 
     // ---------- admin transitions ----------
 
-    /// <summary>Requeue : autorisé depuis failed / expired / cancelled — jamais depuis done.</summary>
+    /// <summary>Requeue: allowed from failed / expired / cancelled — never from done.</summary>
     public async Task<(Job? Job, string? InvalidStatus)> RequeueAsync(long id, string actor, CancellationToken ct = default)
     {
         await using var conn = await dataSource.OpenConnectionAsync(ct);

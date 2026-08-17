@@ -30,8 +30,8 @@ public sealed class LoginModel(ApiKeyStore apiKeyStore) : PageModel
 
         if (record is null || record.Scope != ApiScope.Admin)
         {
-            // Message générique : ne pas distinguer clé inconnue / révoquée / mauvais scope.
-            Error = "Clé invalide.";
+            // Generic message: do not distinguish unknown / revoked / wrong-scope keys.
+            Error = "Invalid key.";
             return Page();
         }
 

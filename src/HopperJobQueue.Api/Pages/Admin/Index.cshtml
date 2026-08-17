@@ -1,13 +1,13 @@
 @page "/admin"
 @model HopperJobQueue.Api.Pages.Admin.IndexModel
 @{
-    ViewData["Title"] = "Vue d'ensemble";
+    ViewData["Title"] = "Overview";
 }
 @section Head {
     <meta http-equiv="refresh" content="30" />
 }
 
-<h1>Vue d'ensemble</h1>
+<h1>Overview</h1>
 
 <div class="stat-grid">
     @foreach (var status in JobStatus.All)
@@ -21,29 +21,29 @@
 
 <div class="panel-grid">
     <section class="panel">
-        <h2>File</h2>
+        <h2>Queue</h2>
         <dl>
-            <dt>Âge du plus vieux <code>pending</code></dt>
+            <dt>Oldest <code>pending</code> age</dt>
             <dd>@(Model.OldestPending ?? "—")</dd>
-            <dt>Jobs reçus (24 h)</dt>
+            <dt>Jobs received (24 h)</dt>
             <dd>@Model.Stats.Enqueued24h</dd>
-            <dt>Terminés <code>done</code> (24 h)</dt>
+            <dt>Finished <code>done</code> (24 h)</dt>
             <dd>@Model.Stats.Done24h</dd>
-            <dt>Terminés <code>failed</code> (24 h)</dt>
+            <dt>Finished <code>failed</code> (24 h)</dt>
             <dd>@Model.Stats.Failed24h</dd>
         </dl>
     </section>
 
     <section class="panel">
-        <h2>Dernière activité par worker</h2>
+        <h2>Latest activity per worker</h2>
         @if (Model.Stats.Workers.Count == 0)
         {
-            <p class="muted">Aucune activité de worker enregistrée.</p>
+            <p class="muted">No worker activity recorded.</p>
         }
         else
         {
             <table>
-                <thead><tr><th>Worker</th><th>Vu pour la dernière fois</th></tr></thead>
+                <thead><tr><th>Worker</th><th>Last seen</th></tr></thead>
                 <tbody>
                 @foreach (var worker in Model.Stats.Workers)
                 {

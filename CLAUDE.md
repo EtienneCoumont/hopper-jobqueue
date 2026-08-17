@@ -1,78 +1,80 @@
-# hopper-jobqueue — repères pour les sessions futures
+# hopper-jobqueue — bearings for future sessions
 
-Service de file de jobs HTTP : des producteurs quelconques déposent, des workers derrière
-NAT viennent chercher (polling sortant uniquement), un dashboard admin contrôle. Le brief
-complet est dans `BRIEF.md` — le lire avant toute évolution ; tout y est tranché (§14).
+HTTP job-queue service: arbitrary producers enqueue, workers behind NAT come and fetch
+(outbound polling only), an admin dashboard controls. The full brief is in `BRIEF.md` —
+read it before any evolution; everything is settled there (§14).
 
 ## Architecture
 
-- `src/HopperJobQueue.Api` — unique projet : minimal API (`/api/v1`), Razor Pages
-  (`/admin`), tâche de fond. Pas de couches, pas d'ORM : Dapper + SQL explicite dans
-  `Jobs/JobStore.cs` (jobs) et `Auth/ApiKeyStore.cs` (clés).
-- `Migrations/*.sql` — scripts numérotés embarqués, appliqués par DbUp au démarrage sous
-  `pg_advisory_lock` (échec migration = sortie non nulle, pas de démarrage en base
-  incohérente). Journal DbUp : `jobqueue.schemaversions`.
-- `Maintenance/SweeperService.cs` — toutes les 60 s, une transaction : TTL dépassés →
-  `expired` ; bails expirés à bout de tentatives → `failed` (`last_error = "bail expiré,
-  tentatives épuisées"`) ; purge des terminaux au-delà de `job_kinds.retention_days` ;
-  flush du tampon `last_used_at`. `RunOnceAsync` est public pour les tests.
-- `Program.cs` — ordre du pipeline significatif : ForwardedHeaders → ExceptionHandler →
-  limite de corps /complete → en-têtes sécurité /admin → auth par clé API →
-  rate limiter (partition par clé sinon par IP) → enforcement des scopes (métadonnées
-  d'endpoint) → static files → cookie auth → antiforgery → endpoints.
-- Tests : `tests/HopperJobQueue.Tests`, une collection xUnit séquentielle, un conteneur
-  PostgreSQL 17 partagé (Testcontainers) + `WebApplicationFactory`, reset des tables par
-  test. Les 10 scénarios du §9 du brief y sont, nommés `TestN_…`.
+- `src/HopperJobQueue.Api` — single project: minimal API (`/api/v1`), Razor Pages
+  (`/admin`), background task. No layers, no ORM: Dapper + explicit SQL in
+  `Jobs/JobStore.cs` (jobs) and `Auth/ApiKeyStore.cs` (keys).
+- `Migrations/*.sql` — numbered embedded scripts, applied by DbUp at startup under
+  `pg_advisory_lock` (failed migration = non-zero exit, no starting on an inconsistent
+  database). DbUp journal: `jobqueue.schemaversions`.
+- `Maintenance/SweeperService.cs` — every 60 s, one transaction: exceeded TTLs →
+  `expired`; expired leases out of attempts → `failed` (`last_error = "lease expired,
+  attempts exhausted"`); purge of terminal jobs beyond `job_kinds.retention_days`;
+  flush of the `last_used_at` buffer. `RunOnceAsync` is public for tests.
+- `Program.cs` — pipeline order matters: ForwardedHeaders → ExceptionHandler →
+  /complete body limit → /admin security headers → API-key auth → rate limiter
+  (partition by key, else by IP) → scope enforcement (endpoint metadata) → static
+  files → cookie auth → antiforgery → endpoints.
+- Tests: `tests/HopperJobQueue.Tests`, one sequential xUnit collection, one shared
+  PostgreSQL 17 container (Testcontainers) + `WebApplicationFactory`, tables reset per
+  test. The 10 scenarios of the brief's §9 are there, named `TestN_…`.
 
-## Invariants (§4 du brief — couverts par les tests, ne pas casser)
+## Invariants (§4 of the brief — covered by tests, do not break)
 
-- `for update skip locked` dans le claim : **obligatoire**, c'est ce qui empêche deux
-  workers d'obtenir le même job. Les prédicats d'éligibilité sont répétés dans le select
-  verrouillant (re-vérification EvalPlanQual en READ COMMITTED) ; le handler boucle tant
-  que l'instruction rend zéro ligne alors qu'il reste des jobs éligibles.
-- Équité entre files : plus vieux job de **chaque** file éligible puis tirage aléatoire.
-  Jamais de `order by created_at` global.
-- `attempts` s'incrémente **au claim**, pas au complete (protection poison message).
-- `expires_at` dépassé ⇒ jamais distribué, même `pending`.
-- `done` et `cancelled` sont terminaux ; `requeue` admin possible depuis
-  `failed`/`expired`/`cancelled`, **jamais** depuis `done`.
-- Toute transition écrit `job_events` **dans la même transaction** que l'update.
-- Idempotence d'enqueue en base (`on conflict do nothing` puis relecture) — jamais de
-  select préalable. Rejeu d'enqueue = `200 created:false`, pas `409`.
-- `complete`/`heartbeat` gardés par `leaseToken` ; rejeu d'un complete identique = `200`
-  sans réécriture ; token périmé = `409` (un zombie n'écrase jamais le travail d'autrui).
-- Le `leaseToken` n'apparaît que dans la réponse de claim, jamais dans les lectures.
-- `GET /jobs/{id}` hors `allowed_kinds` ⇒ `404`, jamais `403` (pas d'énumération).
-- Le service est agnostique : aucune mention d'un producteur particulier (n8n, mail…)
-  dans le code, les types, les colonnes ou les erreurs. `payload`/`result` opaques.
+- `for update skip locked` in the claim: **mandatory**, it is what prevents two workers
+  from getting the same job. The eligibility predicates are repeated in the locking
+  select (EvalPlanQual re-check under READ COMMITTED); the handler loops as long as the
+  statement returns zero rows while eligible jobs remain.
+- Fairness across queues: oldest job of **each** eligible queue, then a random pick.
+  Never a global `order by created_at`.
+- `attempts` increments **at claim**, not at complete (poison message protection).
+- `expires_at` exceeded ⇒ never distributed, even `pending`.
+- `done` and `cancelled` are terminal; admin `requeue` is possible from
+  `failed`/`expired`/`cancelled`, **never** from `done`.
+- Every transition writes `job_events` **in the same transaction** as the update.
+- Enqueue idempotency in the database (`on conflict do nothing` then re-read) — never a
+  prior select. Replayed enqueue = `200 created:false`, not `409`.
+- `complete`/`heartbeat` guarded by `leaseToken`; replaying an identical complete =
+  `200` without rewriting; stale token = `409` (a zombie never overwrites someone
+  else's work).
+- The `leaseToken` only ever appears in the claim response, never in reads.
+- `GET /jobs/{id}` outside `allowed_kinds` ⇒ `404`, never `403` (no enumeration).
+- The service is agnostic: no mention of any particular producer (n8n, mail…) in the
+  code, types, columns or errors. `payload`/`result` are opaque.
 
-## Écarts assumés vs brief (documentés, ne pas « corriger » sans réfléchir)
+## Accepted deviations vs the brief (documented, do not "fix" without thinking)
 
-- **Préfixe de clé stocké : 16 caractères, pas 12.** `hjq_producer` fait exactement
-  12 caractères : deux clés producer entreraient en collision sur `prefix unique`.
-- **Claim : boucle applicative autour de l'instruction unique du brief.** Sous
-  contention, `skip locked` + candidats à une ligne par file rendraient des 204 mensongers
-  (test 1 « exactement 5 » du §9). L'instruction reste seule à verrouiller/distribuer.
-- **Test d'équité borné à 20 claims au lieu de « moins de 10 ».** Le tirage 50/50 du
-  brief lui-même rend « < 10 » flaky à ~5 % ; 20 garde la démonstration (sans équité il en
-  faudrait ~200) sans flakiness (~0,02 %).
-- **Cookie antiforgery en `SameAsRequest`** (le cookie de session, lui, est bien
-  `Secure`/`HttpOnly`/`Strict`) : `Always` fait planter le rendu des formulaires en HTTP
-  direct (dev). Derrière Traefik, X-Forwarded-Proto=https ⇒ Secure en production.
-- **Gestion des files sur le dashboard** (`/admin/kinds`) : nécessaire pour « kind déclaré
-  avant usage » + pause pilotable (§4) ; volontairement absente de l'API (§5 inchangé).
+- **Stored key prefix: 16 characters, not 12.** `hjq_producer` is exactly
+  12 characters: two producer keys would collide on `prefix unique`.
+- **Claim: application-level loop around the brief's single statement.** Under
+  contention, `skip locked` + one-row-per-queue candidates would return lying 204s
+  (test 1 "exactly 5" of §9). The statement remains the only thing that locks and
+  distributes.
+- **Fairness test bounded at 20 claims instead of "fewer than 10".** The brief's own
+  50/50 random pick makes "< 10" flaky at ~5%; 20 keeps the demonstration (without
+  fairness it would take ~200) without flakiness (~0.02%).
+- **Antiforgery cookie set to `SameAsRequest`** (the session cookie itself is properly
+  `Secure`/`HttpOnly`/`Strict`): `Always` breaks form rendering over direct HTTP (dev).
+  Behind Traefik, X-Forwarded-Proto=https ⇒ Secure in production.
+- **Kind management on the dashboard** (`/admin/kinds`): needed for "kind declared
+  before use" + pause control (§4); deliberately absent from the API (§5 unchanged).
 
-## Commandes
+## Commands
 
 ```bash
-dotnet build                      # zéro warning exigé (TreatWarningsAsErrors)
-dotnet test                       # Docker requis (Testcontainers, image postgres:17)
-docker compose up -d              # dev : port 8080 publié, dotnet watch (override)
-docker compose -f compose.yaml up -d --build    # prod : Traefik, aucun port publié
-./ops/backup.sh <dir>             # pg_dump custom + rétention 7j/4sem
-./ops/restore.sh <dump>           # stoppe l'API, recrée la base, relance
+dotnet build                      # zero warnings required (TreatWarningsAsErrors)
+dotnet test                       # Docker required (Testcontainers, postgres:17 image)
+docker compose up -d              # dev: port 8080 published, dotnet watch (override)
+docker compose -f compose.yaml up -d --build    # prod: Traefik, no published port
+./ops/backup.sh <dir>             # custom-format pg_dump + 7d/4w retention
+./ops/restore.sh <dump>           # stops the API, recreates the db, restarts
 ```
 
-Config par env uniquement, préfixe `HOPPER_` (voir README / `.env.example`). Pas de
-nouvelle dépendance NuGet sans validation (§3). Timestamps UTC partout
-(`timestamptz` ↔ `DateTimeOffset`, handler Dapper dans `Infrastructure/DapperConfig.cs`).
+Config via env only, `HOPPER_` prefix (see README / `.env.example`). No new NuGet
+dependency without validation (§3). UTC timestamps everywhere
+(`timestamptz` ↔ `DateTimeOffset`, Dapper handler in `Infrastructure/DapperConfig.cs`).

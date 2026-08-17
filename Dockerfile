@@ -11,7 +11,7 @@ RUN dotnet publish src/HopperJobQueue.Api/HopperJobQueue.Api.csproj -c Release -
 # ---- runtime ----
 FROM mcr.microsoft.com/dotnet/aspnet:10.0 AS runtime
 
-# curl sert uniquement au HEALTHCHECK
+# curl is only used by the HEALTHCHECK
 RUN apt-get update \
     && apt-get install -y --no-install-recommends curl \
     && rm -rf /var/lib/apt/lists/*
@@ -19,10 +19,10 @@ RUN apt-get update \
 WORKDIR /app
 COPY --from=build /app/publish .
 
-# Pas de root dans le conteneur
+# No root in the container
 USER $APP_UID
 
-# Traefik termine TLS ; le conteneur n'écoute qu'en HTTP interne
+# Traefik terminates TLS; the container only listens on internal HTTP
 ENV ASPNETCORE_URLS=http://+:8080
 EXPOSE 8080
 

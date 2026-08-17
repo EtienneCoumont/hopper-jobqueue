@@ -52,7 +52,7 @@ public sealed class ApiKeyStore(NpgsqlDataSource dataSource)
             }
             catch (PostgresException ex) when (ex.SqlState == PostgresErrorCodes.UniqueViolation && attempt < 5)
             {
-                // Collision de préfixe (rarissime) : on retire une autre clé.
+                // Prefix collision (vanishingly rare): draw another key.
             }
         }
     }
@@ -100,9 +100,9 @@ public sealed class ApiKeyStore(NpgsqlDataSource dataSource)
     }
 
     /// <summary>
-    /// Amorçage : si la table est vide au démarrage, crée une clé admin — fournie par
-    /// <c>HOPPER_BOOTSTRAP_ADMIN_KEY</c>, sinon générée et écrite une seule fois dans les
-    /// logs au niveau Warning. C'est le seul endroit du code où une clé complète est loguée.
+    /// Bootstrap: if the table is empty at startup, creates an admin key — taken from
+    /// <c>HOPPER_BOOTSTRAP_ADMIN_KEY</c>, otherwise generated and written once to the
+    /// logs at Warning level. This is the only place in the code where a full key is logged.
     /// </summary>
     public async Task EnsureBootstrapKeyAsync(AppConfig config, ILogger logger, CancellationToken ct = default)
     {

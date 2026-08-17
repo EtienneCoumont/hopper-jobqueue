@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html lang="fr">
+<html lang="en">
 <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
@@ -13,13 +13,13 @@
     @if (User.Identity?.IsAuthenticated == true)
     {
         <nav>
-            <a href="/admin">Vue d'ensemble</a>
+            <a href="/admin">Overview</a>
             <a href="/admin/jobs">Jobs</a>
-            <a href="/admin/kinds">Files</a>
-            <a href="/admin/keys">Clés</a>
+            <a href="/admin/kinds">Kinds</a>
+            <a href="/admin/keys">Keys</a>
         </nav>
         <form method="post" asp-page="/Admin/Login" asp-page-handler="Logout" class="logout-form">
-            <button type="submit" class="link-button">Déconnexion (@User.Identity.Name)</button>
+            <button type="submit" class="link-button">Sign out (@User.Identity.Name)</button>
         </form>
     }
 </header>

@@ -9,8 +9,9 @@ using Testcontainers.PostgreSql;
 namespace HopperJobQueue.Tests.Support;
 
 /// <summary>
-/// Une vraie base PostgreSQL (Testcontainers) + l'application complète (WebApplicationFactory),
-/// partagées par toute la collection « integration ». Chaque test remet les tables à zéro.
+/// A real PostgreSQL database (Testcontainers) + the full application
+/// (WebApplicationFactory), shared by the whole "integration" collection. Each test
+/// resets the tables.
 /// </summary>
 public sealed class IntegrationFixture : IAsyncLifetime
 {
@@ -33,11 +34,11 @@ public sealed class IntegrationFixture : IAsyncLifetime
         {
             builder.UseEnvironment("Production");
             builder.UseSetting("DB_CONNECTIONSTRING", ConnectionString);
-            // Le balayeur ne doit tourner que quand un test l'invoque explicitement.
+            // The sweeper must only run when a test invokes it explicitly.
             builder.UseSetting("SWEEP_INTERVAL_SECONDS", "3600");
         });
 
-        // Force le démarrage (migrations + amorçage) avant le premier test.
+        // Forces startup (migrations + bootstrap) before the first test.
         _ = Factory.CreateClient();
     }
 
@@ -73,7 +74,7 @@ public sealed class IntegrationFixture : IAsyncLifetime
             new { Name = name, Enabled = enabled, Ttl = defaultTtlSeconds, MaxAttempts = defaultMaxAttempts, Lease = defaultLeaseSeconds, Retention = retentionDays });
     }
 
-    /// <summary>Crée une clé API en base et renvoie le secret en clair pour le test.</summary>
+    /// <summary>Creates an API key in the database and returns the clear-text secret for the test.</summary>
     public async Task<string> CreateKeyAsync(string scope, params string[] allowedKinds)
     {
         var key = ApiKeys.Generate(scope);
