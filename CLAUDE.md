@@ -2,8 +2,7 @@
 
 HTTP job-queue service: arbitrary producers enqueue, workers behind NAT come and fetch
 (outbound polling only), an admin dashboard controls. This file carries the binding
-invariants and decisions from the original design brief (kept out of the repository) —
-read it before any evolution.
+invariants and decisions — read it before any evolution.
 
 ## Architecture
 
@@ -62,7 +61,7 @@ read it before any evolution.
 - The service is agnostic: no mention of any particular producer (n8n, mail…) in the
   code, types, columns or errors. `payload`/`result` are opaque.
 
-## Accepted deviations vs the original brief (documented, do not "fix" without thinking)
+## Accepted decisions (documented, do not "fix" without thinking)
 
 - **Stored key prefix: 16 characters, not the brief's 12.** `hjq_producer` is exactly
   12 characters: two producer keys would collide on `prefix unique`.

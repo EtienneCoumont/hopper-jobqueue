@@ -14,26 +14,6 @@ external. Producers poll their results back.
 Documentation: **[etiennecoumont.github.io/hopper-jobqueue](https://etiennecoumont.github.io/hopper-jobqueue/)**
 (also browsable in [`docs/`](docs/index.md)).
 
-## Why "hopper"?
-
-The name is a double pun.
-
-<table>
-<tr>
-<td width="50%" valign="top">
-<a href="docs/images/hopper-industrial.svg"><img src="docs/images/hopper-industrial.svg" width="100%" alt="An industrial hopper: bulk in at the top, one job at a time out onto a conveyor"></a>
-An <b>industrial hopper</b> takes bulk loads dumped in at the top and feeds them out of the bottom in a steady, measured stream. That is precisely this service: producers tip jobs in as they come; workers draw them out one at a time.
-</td>
-<td width="50%" valign="top">
-<a href="docs/images/hopper-painter.svg"><img src="docs/images/hopper-painter.svg" width="100%" alt="A night scene in the mood of an Edward Hopper painting: a lone figure in a lit diner window"></a>
-<b>Edward Hopper</b> painted lone figures waiting under artificial light in the middle of the night. Anyone who has watched a worker poll an empty queue at 3 a.m. knows the mood.
-</td>
-</tr>
-</table>
-
-*Both illustrations are original vector art drawn for this project and dedicated to the
-public domain — no rights reserved.*
-
 ## Screenshots
 
 The admin dashboard — server-rendered Razor Pages, one hand-written CSS file, no
@@ -87,43 +67,17 @@ in containers).
 
 ## Quickstart
 
-### Development
-
-The dev compose file starts PostgreSQL only; the API runs on your machine, with hot
-reload and a working debugger:
-
-```bash
-git clone https://github.com/EtienneCoumont/hopper-jobqueue.git
-cd hopper-jobqueue
-docker compose up -d      # PostgreSQL on localhost:5432, dev credentials
-export HOPPER_DB_CONNECTIONSTRING="Host=127.0.0.1;Port=5432;Database=hopper;Username=hopper;Password=hopper-dev"
-dotnet watch --project src/HopperJobQueue.Api run --urls http://localhost:8080
-```
-
-The bootstrap **admin key** appears right in the console on first start. Use
-`http://localhost:8080/admin` (`localhost`, not an IP: the session cookie is `Secure`
-and browsers only accept it there over plain HTTP).
-
-No .NET SDK at hand? Run the CI-published image instead — the full service, nothing
-to build:
-
-```bash
-docker compose --profile try up -d          # database + API on http://localhost:8080
-docker compose logs hopper | grep "bootstrap admin key"
-```
-
-### Production — a directory, two files, no checkout
+### Package installation
 
 The deployment artifact is `deploy/compose.yaml` + a `.env`. Copy them into a
-directory on the server (`curl` from the repo, or `scp`) and run plain
-`docker compose` commands from there — no git, no build:
+directory (`curl` from the repo, or `scp`) and run
+`docker compose` commands from there:
 
 ```bash
-mkdir -p /opt/hopper-jobqueue && cd /opt/hopper-jobqueue
+mkdir hopper-jobqueue && cd hopper-jobqueue
 BASE=https://raw.githubusercontent.com/EtienneCoumont/hopper-jobqueue/main/deploy
 curl -fsSO $BASE/compose.yaml
 curl -fsS  $BASE/.env.example -o .env
-curl -fsSO $BASE/backup.sh && curl -fsSO $BASE/restore.sh && chmod +x backup.sh restore.sh
 nano .env    # password, public host, admin IP allowlist — and, if your Traefik's
              # network/entrypoint/resolver aren't the defaults, the three HOPPER_TRAEFIK_* vars
 
@@ -153,6 +107,31 @@ curl -s $H/jobs/1/complete -H "Authorization: Bearer $WORKER_KEY" -H 'Content-Ty
 curl -s $H/jobs/by-key/demo:1 -H "Authorization: Bearer $PRODUCER_KEY"                # read back
 ```
 
+### Development
+
+The dev compose file starts PostgreSQL only; the API runs on your machine, with hot
+reload and a working debugger:
+
+```bash
+git clone https://github.com/EtienneCoumont/hopper-jobqueue.git
+cd hopper-jobqueue
+docker compose up -d      # PostgreSQL on localhost:5432, dev credentials
+export HOPPER_DB_CONNECTIONSTRING="Host=127.0.0.1;Port=5432;Database=hopper;Username=hopper;Password=hopper-dev"
+dotnet watch --project src/HopperJobQueue.Api run --urls http://localhost:8080
+```
+
+The bootstrap **admin key** appears right in the console on first start. Use
+`http://localhost:8080/admin` (`localhost`, not an IP: the session cookie is `Secure`
+and browsers only accept it there over plain HTTP).
+
+No .NET SDK at hand? Run the CI-published image instead — the full service, nothing
+to build:
+
+```bash
+docker compose --profile try up -d          # database + API on http://localhost:8080
+docker compose logs hopper | grep "bootstrap admin key"
+```
+
 ## Documentation
 
 | Page | Content |
@@ -179,6 +158,26 @@ SQL, no ORM), DbUp migrations, Serilog JSON logs, xUnit + Testcontainers.
 On every push to `main`, CI runs the full test suite and publishes the Docker image
 to [GHCR](https://github.com/EtienneCoumont/hopper-jobqueue/pkgs/container/hopper-jobqueue)
 (`latest`, plus immutable `sha-<commit>` tags; `v*` git tags publish versions).
+
+## Why "hopper"?
+
+The name is a double pun.
+
+<table>
+<tr>
+<td width="50%" valign="top">
+<a href="docs/images/hopper-industrial.svg"><img src="docs/images/hopper-industrial.svg" width="100%" alt="An industrial hopper: bulk in at the top, one job at a time out onto a conveyor"></a>
+An <b>industrial hopper</b> takes bulk loads dumped in at the top and feeds them out of the bottom in a steady, measured stream. That is precisely this service: producers tip jobs in as they come; workers draw them out one at a time.
+</td>
+<td width="50%" valign="top">
+<a href="docs/images/hopper-painter.svg"><img src="docs/images/hopper-painter.svg" width="100%" alt="A night scene in the mood of an Edward Hopper painting: a lone figure in a lit diner window"></a>
+<b>Edward Hopper</b> painted lone figures waiting under artificial light in the middle of the night. Anyone who has watched a worker poll an empty queue at 3 a.m. knows the mood.
+</td>
+</tr>
+</table>
+
+*Both illustrations are original vector art drawn for this project and dedicated to the
+public domain — no rights reserved.*
 
 ## License
 
