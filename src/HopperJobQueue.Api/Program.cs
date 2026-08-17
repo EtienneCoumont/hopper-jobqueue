@@ -127,7 +127,10 @@ try
     builder.Services.AddAntiforgery(options =>
     {
         options.Cookie.HttpOnly = true;
-        options.Cookie.SecurePolicy = CookieSecurePolicy.Always;
+        // SameAsRequest et non Always : derrière Traefik la requête est vue en HTTPS
+        // (X-Forwarded-Proto), le cookie est donc Secure en production — mais Always
+        // ferait lever CheckSSLConfig en dev, où le port est servi en HTTP direct.
+        options.Cookie.SecurePolicy = CookieSecurePolicy.SameAsRequest;
         options.Cookie.SameSite = SameSiteMode.Strict;
         options.Cookie.Path = "/admin";
     });

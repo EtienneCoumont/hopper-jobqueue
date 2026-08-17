@@ -1,0 +1,18 @@
+# Surcharge de développement : appliquée automatiquement par `docker compose up`.
+# Publie le port sur l'hôte et monte le code à chaud (dotnet watch).
+# En production, déployer avec :  docker compose -f compose.yaml up -d
+
+services:
+  hopper:
+    image: mcr.microsoft.com/dotnet/sdk:10.0
+    build: !reset null
+    working_dir: /workspace
+    command: dotnet watch --project src/HopperJobQueue.Api run --urls http://+:8080
+    ports:
+      - "8080:8080"
+    volumes:
+      - .:/workspace
+      - hopper-nuget:/root/.nuget/packages
+
+volumes:
+  hopper-nuget:
