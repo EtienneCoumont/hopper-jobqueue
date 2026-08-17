@@ -69,11 +69,12 @@ docker compose up -d
 The copied `compose.yaml` itself changes rarely; when a release notes that it did,
 re-`curl` it the same way as at install time.
 
-**Package visibility**: the first publish creates the GHCR package as *private*. Either
-make it public once (package page → settings → change visibility — the code is WTFPL
-anyway), or keep it private and authenticate the server:
-`docker login ghcr.io -u <user>` with a personal access token carrying the
-`read:packages` scope.
+**Package visibility**: the package is published by the workflow's `GITHUB_TOKEN`,
+which links it to this repository — it inherits the repository's visibility and is
+therefore **public from the first push**: anonymous `docker pull` works out of the
+box, nothing to configure. (Only if you ever switch the package to private would the
+server need `docker login ghcr.io -u <user>` with a `read:packages` personal access
+token.)
 
 To build the image without CI (air-gapped use):
 `docker build -t ghcr.io/etiennecoumont/hopper-jobqueue:latest .` from a checkout —
