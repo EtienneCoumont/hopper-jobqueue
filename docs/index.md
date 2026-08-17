@@ -30,8 +30,9 @@ job is parked as `failed` instead of poisoning the queue forever.
 | [Getting started](getting-started.md) | Requirements, first run, first key, first job |
 | [API reference](api.md) | Every endpoint with `curl` examples, auth, errors, limits |
 | [Architecture](architecture.md) | Data model, state machine, lease and fairness mechanics |
-| [Deployment](deployment.md) | Docker, Traefik, environment variables, hardening |
+| [Deployment](deployment.md) | Docker, reverse proxy variants, environment variables, hardening |
 | [Operations](operations.md) | Dashboard tour, key management, monitoring, backup and restore |
+| [Development](development.md) | Dev loop with hot reload, building, running the test suite |
 
 ## Design in one paragraph
 

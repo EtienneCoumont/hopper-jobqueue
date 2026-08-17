@@ -4,11 +4,9 @@
 #   export HOPPER_DB_CONNECTIONSTRING="Host=127.0.0.1;Port=5432;Database=hopper;Username=hopper;Password=hopper-dev"
 #   dotnet watch --project src/HopperJobQueue.Api run --urls http://localhost:8080
 #
-# No .NET SDK? `docker compose --profile try up -d` also starts the CI-published
-# image on http://localhost:8080 — the full service, nothing to build.
-#
-# Production does not use this file: see deploy/ (a compose file to copy on the
-# server next to a .env — no checkout, no build).
+# This file is for hacking on the code. To just *run* the service — locally or on a
+# server, with no .NET SDK and no checkout — use deploy/standalone/ instead: two files
+# and the prebuilt image (see the README quickstart).
 
 name: hopper-jobqueue-dev
 
@@ -29,17 +27,6 @@ services:
       interval: 10s
       timeout: 5s
       retries: 5
-
-  hopper:
-    profiles: [try]
-    image: ghcr.io/etiennecoumont/hopper-jobqueue:${HOPPER_IMAGE_TAG:-latest}
-    environment:
-      HOPPER_DB_CONNECTIONSTRING: Host=hopper-db;Port=5432;Database=hopper;Username=hopper;Password=hopper-dev
-    ports:
-      - "127.0.0.1:8080:8080"
-    depends_on:
-      hopper-db:
-        condition: service_healthy
 
 volumes:
   hopper-pgdata-dev:

@@ -8,38 +8,24 @@ title: Getting started
 
 ## Requirements
 
-To **run** the service (production): Docker with Compose v2, and a
-[Traefik](https://traefik.io/) instance for TLS termination (any TLS-terminating
-reverse proxy works, but the shipped labels target Traefik). The image is prebuilt
-by CI — nothing is compiled on the server.
+Docker with Compose v2 — that is all. The image is prebuilt by CI: nothing is compiled,
+on your machine or on the server. Exposing the service to the internet additionally
+requires a TLS-terminating reverse proxy in front; two deployment variants ship in
+`deploy/`, one wired for [Traefik](https://traefik.io/) through container labels, one
+publishing a local port for any other proxy (see [Deployment](deployment.md)).
 
-To **develop**: .NET SDK 10.0, and Docker (the dev database runs in a container, and
-the integration tests spin up a real PostgreSQL 17 via Testcontainers).
+Working *on* the code is the one case that needs more — .NET SDK 10.0, see
+[Development](development.md).
 
 No outbound network access is required at runtime: the service never calls anything.
 
-## First run (development)
+## First run
 
-The dev compose file starts PostgreSQL only; the API runs on your machine with hot
-reload and a working debugger:
-
-```bash
-git clone https://github.com/EtienneCoumont/hopper-jobqueue.git
-cd hopper-jobqueue
-docker compose up -d      # PostgreSQL on localhost:5432, dev credentials
-export HOPPER_DB_CONNECTIONSTRING="Host=127.0.0.1;Port=5432;Database=hopper;Username=hopper;Password=hopper-dev"
-dotnet watch --project src/HopperJobQueue.Api run --urls http://localhost:8080
-curl http://localhost:8080/healthz     # -> ok
-```
-
-Without the .NET SDK, the `try` profile runs the CI-published image instead:
-
-```bash
-docker compose --profile try up -d     # database + API on http://localhost:8080
-```
-
-Production works differently — a copied compose file pulling the GHCR image, no
-checkout: see [Deployment](deployment.md).
+Two `curl`s and one `docker compose up -d` start PostgreSQL and the API from the
+prebuilt image. The files are identical on a laptop and on a server, so everything below
+applies to both — the steps are in [Deployment](deployment.md). With a checkout and the
+.NET SDK, `dotnet watch` gives you the same service with hot reload
+([Development](development.md)).
 
 ## Bootstrap key
 
@@ -47,7 +33,7 @@ On first start, if the key table is empty, the service creates an `admin` key an
 writes it **once** to the logs — straight to your console under `dotnet watch`, or:
 
 ```bash
-docker compose logs hopper | grep "bootstrap admin key"   # try profile / production
+docker compose logs hopper | grep -o 'hjq_admin_[A-Za-z0-9]*'
 ```
 
 Alternatively, set the `HOPPER_BOOTSTRAP_ADMIN_KEY` environment variable
@@ -98,15 +84,5 @@ curl -s $H/jobs/by-key/demo:1 -H "Authorization: Bearer $PRODUCER_KEY"
 
 A typical worker is a loop: `claim` → work (+ `heartbeat`) → `complete` → sleep 30 s
 when the queue answers `204`.
-
-## Running the tests
-
-```bash
-dotnet test
-```
-
-Docker is required: the suite starts a real PostgreSQL 17 (Testcontainers) and runs the
-whole application against it — including 20-way concurrent claim races, lease-expiry
-takeovers and fairness across queues.
 
 Next: the [API reference](api.md).

@@ -1,16 +1,17 @@
-# hopper-jobqueue — production deployment file. This file is the deployment
-# artifact: copy it to a directory on the server next to a filled-in .env
-# (see .env.example) and run plain `docker compose` commands from there.
+# hopper-jobqueue — production deployment file, Traefik variant. This file is the
+# deployment artifact: copy it to a directory on the server next to a filled-in
+# .env (see .env.example) and run plain `docker compose` commands from there.
 # No git checkout, no build: the image comes prebuilt from GHCR.
 #
 #   /opt/hopper-jobqueue/
 #   ├── compose.yaml    ← this file
 #   ├── .env            ← from .env.example
-#   ├── backup.sh       ← optional, from the same deploy/ directory
+#   ├── backup.sh       ← optional, from deploy/maintenance/
 #   └── restore.sh      ← optional
 #
 # No port is published on the host: Traefik reaches the service through the
-# Docker network, PostgreSQL stays on the internal network.
+# Docker network, PostgreSQL stays on the internal network. Another reverse
+# proxy? Use ../standalone/ instead.
 
 # Stable project name: containers, networks and the hopper-pgdata volume keep
 # the same names no matter which directory this file lives in.

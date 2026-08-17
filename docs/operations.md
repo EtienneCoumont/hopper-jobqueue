@@ -8,7 +8,7 @@ title: Operations
 
 ## The dashboard
 
-Server-rendered Razor Pages under `/admin`, behind the Traefik IP allowlist plus an
+Server-rendered Razor Pages under `/admin`, behind the proxy's IP allowlist plus an
 admin-key sign-in exchanged for a session cookie (`HttpOnly`, `Secure`,
 `SameSite=Strict`).
 
@@ -83,8 +83,9 @@ once, at first start — revoke it after setup.
 
 Daily compressed `pg_dump` (custom format) with rolling retention — 7 daily, 4 weekly.
 The scripts live in the deployment directory next to `compose.yaml` and `.env`
-(copied from the repo's `deploy/` at install time) and change to their own directory
-themselves, so a cron entry is a plain absolute path:
+(copied from the repo's `deploy/maintenance/` at install time) and change to their own
+directory themselves, so a cron entry is a plain absolute path. They only reference the
+`hopper` and `hopper-db` service names, so they work with either deployment variant:
 
 ```cron
 0 3 * * *  /opt/hopper-jobqueue/backup.sh /var/backups/hopper-jobqueue >> /var/log/hopper-backup.log 2>&1

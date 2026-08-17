@@ -6,40 +6,51 @@ title: Deployment
 
 [← Back to index](index.md)
 
-Target: one Docker host running Traefik. The service container publishes **no port** —
-Traefik reaches it over the `traefik-public` Docker network. PostgreSQL lives on the
-internal `hopper-internal` network and is never exposed anywhere.
+Target: one Docker host. The container listens on plain HTTP `:8080` and expects a
+**TLS-terminating reverse proxy** in front of it. PostgreSQL lives on the internal
+`hopper-internal` network and is never exposed anywhere.
 
-## The deployment artifact
+## Pick a variant
 
 Production needs **no git checkout and no build**: everything the server runs is
-described by `deploy/compose.yaml`, a self-contained file that pulls the CI-built
-image from GHCR. Copy it into a deployment directory next to a filled-in `.env`
-(plus, optionally, the backup/restore scripts), and every command is plain
-`docker compose <cmd>` from that directory:
+described by one self-contained compose file that pulls the CI-built image from GHCR.
+Two ship in
+[`deploy/`](https://github.com/EtienneCoumont/hopper-jobqueue/tree/main/deploy):
+
+| Variant | What it gives you |
+|---|---|
+| `deploy/traefik/` | Traefik handles TLS, routing and an IP allowlist on `/admin`, all driven by container labels. **No port is published**: Traefik reaches the container over the `traefik-public` Docker network. |
+| `deploy/standalone/` | No proxy configuration at all — the API is published on `127.0.0.1:8080` and everything upstream is yours (Caddy, nginx, HAProxy…). |
+
+Copy the chosen pair into a deployment directory next to a filled-in `.env` (plus,
+optionally, the backup/restore scripts from `deploy/maintenance/`), and every command
+is plain `docker compose <cmd>` from that directory:
 
 ```
 /opt/hopper-jobqueue/
-├── compose.yaml    ← deploy/compose.yaml from the repo
-├── .env            ← from deploy/.env.example
-├── backup.sh       ← optional
+├── compose.yaml    ← from deploy/<variant>/
+├── .env            ← from deploy/<variant>/.env.example
+├── backup.sh       ← optional, from deploy/maintenance/
 └── restore.sh      ← optional
 ```
 
 ```bash
 mkdir -p /opt/hopper-jobqueue && cd /opt/hopper-jobqueue
 BASE=https://raw.githubusercontent.com/EtienneCoumont/hopper-jobqueue/main/deploy
-curl -fsSO $BASE/compose.yaml
-curl -fsS  $BASE/.env.example -o .env      # then fill in the variables below
-curl -fsSO $BASE/backup.sh && curl -fsSO $BASE/restore.sh && chmod +x backup.sh restore.sh
-docker network create traefik-public        # skip if your Traefik already provides one
+VARIANT=traefik                                  # or: standalone
+curl -fsSO $BASE/$VARIANT/compose.yaml
+curl -fsS  $BASE/$VARIANT/.env.example -o .env   # then fill in the variables below
+curl -fsSO $BASE/maintenance/backup.sh && curl -fsSO $BASE/maintenance/restore.sh
+chmod +x backup.sh restore.sh
+docker network create traefik-public             # traefik variant only, if you have none
 docker compose up -d
 ```
 
-The compose file pins the project name (`name: hopper-jobqueue`), so containers,
-networks and the `hopper-pgdata` volume keep stable names wherever the directory
-lives. The development compose file at the repo root plays no role in production —
-there is no override mechanism to guard against.
+Both variants pin the same project name (`name: hopper-jobqueue`), the same service
+names and the same `hopper-pgdata` volume, so containers and networks keep stable names
+wherever the directory lives — and moving from one variant to the other later is a file
+swap, not a migration. The development compose file at the repo root plays no role in
+production; there is no override mechanism to guard against.
 
 ## The image comes from GHCR
 
@@ -80,7 +91,31 @@ To build the image without CI (air-gapped use):
 `docker build -t ghcr.io/etiennecoumont/hopper-jobqueue:latest .` from a checkout —
 the .NET SDK is only needed inside the build container.
 
-## Plugging into an existing Traefik
+## Behind another reverse proxy (standalone variant)
+
+`deploy/standalone/compose.yaml` publishes the API on `127.0.0.1:8080` and stops there.
+The loopback default is deliberate: that port must not be reachable from the internet,
+and the proxy you put in front owns four things.
+
+1. **TLS termination.** `/admin` issues a `Secure` session cookie, so over plain HTTP
+   the dashboard is unusable anywhere except `localhost`.
+2. **`X-Forwarded-Proto` and `X-Forwarded-For`.** The application trusts both from any
+   source (see [below](#tls-and-proxy-headers)) — which is only safe because it is
+   unreachable except through the proxy. Exposed directly, anyone could forge them and
+   count as a fresh client against the per-IP rate limiter.
+3. **Restricting `/admin`** if you want the extra layer the Traefik variant gets from
+   its `ipallowlist` middleware. The admin key sign-in is required either way.
+4. **A request body cap** — 1 MiB is what the Traefik variant sets, upstream of the
+   application's own 64/512 KiB limits.
+
+Caddy's `reverse_proxy 127.0.0.1:8080` sets both headers by default; nginx needs
+`proxy_set_header X-Forwarded-Proto $scheme;` and
+`proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;` spelled out. If the proxy
+itself runs in Docker, loopback will not reach it: drop the published port and put both
+containers on a shared network instead — `deploy/traefik/compose.yaml` shows that
+`external: true` pattern.
+
+## Plugging into an existing Traefik (traefik variant)
 
 If a Traefik already runs on the host, three names in its configuration must line up
 with the compose labels — all three are overridable from `.env`:
@@ -118,29 +153,38 @@ IP ranges in `HOPPER_ADMIN_IP_ALLOWLIST` — `/admin` answers `403` from anywher
 Configuration is environment-only (no config files, no secrets on disk). All variables
 are prefixed `HOPPER_`; compose assembles the connection string for you.
 
-| Variable | Purpose |
-|---|---|
-| `HOPPER_DB_PASSWORD` | PostgreSQL password (user `hopper`, database `hopper`), read from `.env` |
-| `HOPPER_DB_CONNECTIONSTRING` | full Npgsql connection string (**required** — compose builds it from the password) |
-| `HOPPER_PUBLIC_HOST` | public host for the Traefik routers, e.g. `hopper.example.com` |
-| `HOPPER_ADMIN_IP_ALLOWLIST` | comma-separated IP ranges allowed on `/admin` |
-| `HOPPER_BOOTSTRAP_ADMIN_KEY` | optional fixed bootstrap admin key (`hjq_admin_{32 base62}`) |
-| `HOPPER_LOG_LEVEL` | `Verbose` … `Error`, default `Information` |
-| `HOPPER_SWEEP_INTERVAL_SECONDS` | sweeper period, default `60` |
-| `HOPPER_IMAGE_TAG` | image tag to pull from GHCR (`latest`, `X.Y.Z`, `sha-<commit>`), default `latest` |
+| Variable | Variant | Purpose |
+|---|---|---|
+| `HOPPER_DB_PASSWORD` | both | PostgreSQL password (user `hopper`, database `hopper`), read from `.env` |
+| `HOPPER_DB_CONNECTIONSTRING` | both | full Npgsql connection string (**required** — compose builds it from the password) |
+| `HOPPER_BOOTSTRAP_ADMIN_KEY` | both | optional fixed bootstrap admin key (`hjq_admin_{32 base62}`) |
+| `HOPPER_LOG_LEVEL` | both | `Verbose` … `Error`, default `Information` |
+| `HOPPER_SWEEP_INTERVAL_SECONDS` | both | sweeper period, default `60` |
+| `HOPPER_IMAGE_TAG` | both | image tag to pull from GHCR (`latest`, `X.Y.Z`, `sha-<commit>`), default `latest` |
+| `HOPPER_BIND_ADDRESS` | standalone | address the API port is published on, default `127.0.0.1` |
+| `HOPPER_PUBLIC_HOST` | traefik | public host for the routers, e.g. `hopper.example.com` |
+| `HOPPER_ADMIN_IP_ALLOWLIST` | traefik | comma-separated IP ranges allowed on `/admin` |
+| `HOPPER_TRAEFIK_NETWORK`, `_ENTRYPOINT`, `_CERTRESOLVER` | traefik | names that must match your Traefik (see the table above) |
+
+Only four of these reach the application — `HOPPER_DB_CONNECTIONSTRING`,
+`HOPPER_BOOTSTRAP_ADMIN_KEY`, `HOPPER_SWEEP_INTERVAL_SECONDS` and `HOPPER_LOG_LEVEL`.
+The rest are consumed by compose itself, which is why the standalone `.env.example` is
+half the length of the Traefik one.
 
 ## TLS and proxy headers
 
-Traefik terminates TLS. The container listens on plain HTTP :8080 internally and the
-application neither redirects to HTTPS nor sets HSTS — doing so behind a TLS-terminating
-proxy causes redirect loops.
+The reverse proxy terminates TLS. The container listens on plain HTTP :8080 internally
+and the application neither redirects to HTTPS nor sets HSTS — doing so behind a
+TLS-terminating proxy causes redirect loops.
 
 The application trusts `X-Forwarded-For` / `X-Forwarded-Proto` with the known-proxy
-allowlists cleared. This is required in Docker: Traefik's bridge IP changes on every
-recreation, and ASP.NET's default allowlist would silently drop the headers — breaking
-`Secure` cookies and making the per-IP rate limiter count everyone as one client.
+allowlists cleared. This is required in Docker: a containerized proxy's bridge IP
+changes on every recreation, and ASP.NET's default allowlist would silently drop the
+headers — breaking `Secure` cookies and making the per-IP rate limiter count everyone as
+one client. The counterpart is that the container must never be reachable except through
+the proxy, which is what both compose files enforce (no published port, or loopback).
 
-## Routers and the /admin allowlist
+## Routers and the /admin allowlist (traefik variant)
 
 Two Traefik routers ship in the compose labels:
 
@@ -151,7 +195,8 @@ Two Traefik routers ship in the compose labels:
 The IP allowlist is an *additional* defence: the admin key sign-in remains required
 behind it. If your home connection has a dynamic IP, allow a wide range rather than
 disabling the middleware. A buffering middleware caps request bodies at 1 MiB upstream
-of the application's own 64/512 KiB limits.
+of the application's own 64/512 KiB limits. With the standalone variant, both are your
+proxy's job — see [above](#behind-another-reverse-proxy-standalone-variant).
 
 ## PostgreSQL — pinned major version
 
@@ -177,7 +222,8 @@ The API is meant to face the public internet (producers are arbitrary and remote
 workers are behind NAT). What ships:
 
 - Kestrel body caps: 64 KiB everywhere, 512 KiB on `/complete` — a multi-gigabyte body
-  is rejected before being read, and Traefik buffering caps it again upstream.
+  is rejected before being read, and the proxy caps it again upstream (a buffering
+  middleware, in the Traefik variant).
 - Rate limiting: 300/min per API key (sliding window), 60/min per client IP without a
   valid key. `429` beyond.
 - Neutral errors: `problem+json` without stack traces, bare 404 for unknown paths, no

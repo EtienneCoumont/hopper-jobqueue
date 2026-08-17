@@ -56,45 +56,56 @@ More pages (kinds, sign-in, a successful job with its result) in the
 - **Tested against a real database** — the concurrency suite (20-way claim races,
   lease takeovers, fairness) runs on PostgreSQL 17 via Testcontainers.
 
+Stack: .NET 10 minimal API + Razor Pages, PostgreSQL 17, Npgsql + Dapper (explicit SQL,
+no ORM), DbUp migrations, Serilog JSON logs, xUnit + Testcontainers.
+
 ## Requirements
 
-**Run (production):** Docker with Compose v2, and a [Traefik](https://traefik.io/)
-instance for TLS termination and the `/admin` IP allowlist. Nothing else — the image
-comes prebuilt from GHCR.
+**Run it:** Docker with Compose v2. Nothing else — the image comes prebuilt from GHCR,
+nothing is compiled on your machine or on the server.
+
+**Expose it to the internet:** the same, plus a TLS-terminating reverse proxy in front.
+A ready-made [Traefik](https://traefik.io/) setup ships in
+[`deploy/traefik/`](deploy/traefik/); [`deploy/standalone/`](deploy/standalone/) suits
+any other proxy.
 
 **Develop:** .NET SDK 10.0 and Docker (the dev database and the integration tests run
 in containers).
 
 ## Quickstart
 
-### Package installation
+### Run it on your machine
 
-The deployment artifact is `deploy/compose.yaml` + a `.env`. Copy them into a
-directory (`curl` from the repo, or `scp`) and run
-`docker compose` commands from there:
+Two files and one command. No checkout, no build — the image is pulled from GHCR:
 
 ```bash
 mkdir hopper-jobqueue && cd hopper-jobqueue
-BASE=https://raw.githubusercontent.com/EtienneCoumont/hopper-jobqueue/main/deploy
+BASE=https://raw.githubusercontent.com/EtienneCoumont/hopper-jobqueue/main/deploy/standalone
 curl -fsSO $BASE/compose.yaml
 curl -fsS  $BASE/.env.example -o .env
-nano .env    # password, public host, admin IP allowlist — and, if your Traefik's
-             # network/entrypoint/resolver aren't the defaults, the three HOPPER_TRAEFIK_* vars
 
-docker network create traefik-public   # skip if your Traefik already provides the network
-docker compose up -d                   # pulls ghcr.io/etiennecoumont/hopper-jobqueue
-docker compose logs hopper | grep "bootstrap admin key"
+docker compose up -d                                     # PostgreSQL + the API
+docker compose logs hopper | grep -o 'hjq_admin_[A-Za-z0-9]*'   # the bootstrap admin key
 ```
 
-Updating is two commands — `docker compose pull && docker compose up -d` — and
-`HOPPER_IMAGE_TAG` in `.env` pins a version or rolls one back. Full server guide
-(existing Traefik, hardening, backups): [docs/deployment.md](docs/deployment.md).
+The service answers on `http://localhost:8080`. Sign in on
+[`/admin`](http://localhost:8080/admin) with that key — use `localhost`, not an IP: the
+session cookie is `Secure`, and browsers only accept it there over plain HTTP. The key
+is logged **once**, on the first start with an empty database; set
+`HOPPER_BOOTSTRAP_ADMIN_KEY` in the `.env` beforehand if you would rather choose it.
 
-### First steps, dev or prod
+> **Putting it online is not the same command.** Those two files do deploy to a server,
+> but the `.env` still carries `change-me` as the database password, and the API must
+> never face the internet directly: `/admin` needs HTTPS to work at all, and the
+> application trusts `X-Forwarded-*` headers, so a TLS-terminating reverse proxy in
+> front is mandatory. [`deploy/traefik/`](deploy/traefik/) ships that wired up;
+> [docs/deployment.md](docs/deployment.md) covers both variants, the environment
+> variables, hardening and backups.
 
-Sign in on `/admin` with the bootstrap key, declare a kind (`/admin/kinds`), create
-real producer and worker keys (`/admin/keys`), then revoke the bootstrap key. The
-whole life of a job is four calls:
+### First steps
+
+Declare a kind (`/admin/kinds`), create real producer and worker keys (`/admin/keys`),
+then revoke the bootstrap key. The whole life of a job is four calls:
 
 ```bash
 H=http://localhost:8080/api/v1    # or https://your-host/api/v1
@@ -107,30 +118,11 @@ curl -s $H/jobs/1/complete -H "Authorization: Bearer $WORKER_KEY" -H 'Content-Ty
 curl -s $H/jobs/by-key/demo:1 -H "Authorization: Bearer $PRODUCER_KEY"                # read back
 ```
 
-### Development
+### Working on the code
 
-The dev compose file starts PostgreSQL only; the API runs on your machine, with hot
-reload and a working debugger:
-
-```bash
-git clone https://github.com/EtienneCoumont/hopper-jobqueue.git
-cd hopper-jobqueue
-docker compose up -d      # PostgreSQL on localhost:5432, dev credentials
-export HOPPER_DB_CONNECTIONSTRING="Host=127.0.0.1;Port=5432;Database=hopper;Username=hopper;Password=hopper-dev"
-dotnet watch --project src/HopperJobQueue.Api run --urls http://localhost:8080
-```
-
-The bootstrap **admin key** appears right in the console on first start. Use
-`http://localhost:8080/admin` (`localhost`, not an IP: the session cookie is `Secure`
-and browsers only accept it there over plain HTTP).
-
-No .NET SDK at hand? Run the CI-published image instead — the full service, nothing
-to build:
-
-```bash
-docker compose --profile try up -d          # database + API on http://localhost:8080
-docker compose logs hopper | grep "bootstrap admin key"
-```
+The repo's `compose.yaml` starts PostgreSQL alone; the API runs on your machine under
+`dotnet watch`, with hot reload and a debugger. Clone, build, test and conventions:
+[docs/development.md](docs/development.md).
 
 ## Documentation
 
@@ -139,25 +131,12 @@ docker compose logs hopper | grep "bootstrap admin key"
 | [Getting started](docs/getting-started.md) | Requirements, first run, first key, first job |
 | [API reference](docs/api.md) | Every endpoint with `curl` examples, auth, errors, limits |
 | [Architecture](docs/architecture.md) | Data model, state machine, lease and fairness mechanics |
-| [Deployment](docs/deployment.md) | Docker, Traefik, environment variables, hardening |
+| [Deployment](docs/deployment.md) | Docker, reverse proxy variants, environment variables, hardening |
 | [Operations](docs/operations.md) | Dashboard tour, keys, monitoring, backup and restore |
+| [Development](docs/development.md) | Dev loop with hot reload, building, running the test suite |
 
 [`CLAUDE.md`](CLAUDE.md) carries the design invariants and working notes for AI
 coding sessions.
-
-## Development
-
-```bash
-dotnet build    # zero-warning policy (TreatWarningsAsErrors)
-dotnet test     # 16 integration tests against a real PostgreSQL 17 (Docker required)
-```
-
-Stack: .NET 10 minimal API + Razor Pages, PostgreSQL 17, Npgsql + Dapper (explicit
-SQL, no ORM), DbUp migrations, Serilog JSON logs, xUnit + Testcontainers.
-
-On every push to `main`, CI runs the full test suite and publishes the Docker image
-to [GHCR](https://github.com/EtienneCoumont/hopper-jobqueue/pkgs/container/hopper-jobqueue)
-(`latest`, plus immutable `sha-<commit>` tags; `v*` git tags publish versions).
 
 ## Why "hopper"?
 

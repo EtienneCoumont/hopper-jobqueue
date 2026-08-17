@@ -1,0 +1,79 @@
+# hopper-jobqueue — production deployment file, standalone variant: no reverse
+# proxy is configured here, you bring your own. This file is the deployment
+# artifact: copy it to a directory on the server next to a filled-in .env
+# (see .env.example) and run plain `docker compose` commands from there.
+# No git checkout, no build: the image comes prebuilt from GHCR.
+#
+#   /opt/hopper-jobqueue/
+#   ├── compose.yaml    ← this file
+#   ├── .env            ← from .env.example
+#   ├── backup.sh       ← optional, from deploy/maintenance/
+#   └── restore.sh      ← optional
+#
+# A TLS-terminating reverse proxy (Caddy, nginx, HAProxy…) in front is NOT
+# optional, which is why the API port is published on loopback only:
+#   - /admin issues a `Secure` session cookie, so the dashboard does not work
+#     over plain HTTP anywhere except localhost;
+#   - nothing restricts /admin by IP here (the traefik/ variant ships an
+#     allowlist middleware) — the admin key is the only gate;
+#   - the application trusts X-Forwarded-For / X-Forwarded-Proto from any source
+#     (unavoidable behind Docker proxies), so with the port directly reachable
+#     anyone can forge them and defeat the per-IP rate limiter.
+# Your proxy must forward those two headers and terminate TLS.
+#
+# Proxy running in Docker rather than on the host? Publishing to 127.0.0.1 will
+# not reach it: put both on a shared network instead — see ../traefik/compose.yaml
+# for the `external: true` network pattern.
+
+# Stable project name: containers, networks and the hopper-pgdata volume keep
+# the same names no matter which directory this file lives in.
+name: hopper-jobqueue
+
+services:
+  hopper:
+    # Built and published by the repository's docker workflow. Pin a release or
+    # an immutable sha-<commit> tag via HOPPER_IMAGE_TAG (default: latest).
+    image: ghcr.io/etiennecoumont/hopper-jobqueue:${HOPPER_IMAGE_TAG:-latest}
+    restart: unless-stopped
+    ports:
+      # Loopback by default — see the warning above before widening it.
+      - "${HOPPER_BIND_ADDRESS:-127.0.0.1}:8080:8080"
+    environment:
+      HOPPER_DB_CONNECTIONSTRING: >-
+        Host=hopper-db;Port=5432;Database=hopper;Username=hopper;Password=${HOPPER_DB_PASSWORD:?set HOPPER_DB_PASSWORD in .env}
+      HOPPER_BOOTSTRAP_ADMIN_KEY: ${HOPPER_BOOTSTRAP_ADMIN_KEY:-}
+      HOPPER_LOG_LEVEL: ${HOPPER_LOG_LEVEL:-Information}
+    depends_on:
+      hopper-db:
+        condition: service_healthy
+    # Margin above ASP.NET's ShutdownTimeout (20 s): the in-flight HTTP request finishes.
+    stop_grace_period: 30s
+    networks:
+      - hopper-internal
+
+  hopper-db:
+    # Major version pinned: never `latest`. A major bump forces a pg_upgrade or a
+    # dump/restore cycle (see the deployment docs).
+    image: postgres:17
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: hopper
+      POSTGRES_USER: hopper
+      POSTGRES_PASSWORD: ${HOPPER_DB_PASSWORD:?set HOPPER_DB_PASSWORD in .env}
+    volumes:
+      - hopper-pgdata:/var/lib/postgresql/data
+    # No published port: PostgreSQL is only reachable from the internal network.
+    networks:
+      - hopper-internal
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U hopper -d hopper"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+
+volumes:
+  hopper-pgdata:
+
+networks:
+  hopper-internal:

@@ -24,19 +24,30 @@ invariants and decisions — read it before any evolution.
   PostgreSQL 17 container (Testcontainers) + `WebApplicationFactory`, tables reset per
   test. The 10 originally mandated scenarios are there, named `TestN_…`.
 - Docs: `README.md` is the public landing page (overview, name pun, screenshots,
-  quickstart); the detailed reference content (env vars, one curl per endpoint, full
-  cycle, restore procedure) lives in `docs/` — a GitHub Pages site
+  quickstart) and keeps no procedure of its own — every detail (env vars, one curl per
+  endpoint, full cycle, restore procedure, the whole dev loop in `docs/development.md`)
+  lives in `docs/` — a GitHub Pages site
   (Jekyll Cayman, `docs/_config.yml`; enable via Settings → Pages → branch + `/docs`).
   Screenshots and the two name illustrations are in `docs/images/`.
-- Docker: root `compose.yaml` is DEV ONLY (PostgreSQL on localhost:5432 with dev
-  credentials + a `try` profile running the GHCR image; the API itself runs on the
-  host via `dotnet watch`). `deploy/compose.yaml` is the production artifact — copied
-  to a server directory next to a `.env` (no checkout, no build, bare `docker
-  compose` commands), pulling `ghcr.io/etiennecoumont/hopper-jobqueue` published by
-  `.github/workflows/docker.yml` (tests gate the publish; tags: `latest` on main,
-  `X.Y.Z` on `v*` tags, immutable `sha-<commit>`). `deploy/backup.sh` /
-  `deploy/restore.sh` cd to their own directory and are copied alongside. There is
-  no compose.override.yaml and no wrapper — keep it that way.
+- Repo layout rule: the **root** holds what you run from a checkout (`Dockerfile`,
+  `compose.yaml`, the solution), **`deploy/`** what you copy onto a server. Don't move
+  either into a `docker/` folder: `docker build .` and `docker compose up -d` both rely
+  on root discovery (Compose walks *up* from the cwd, never down), so it would add a
+  `-f`/`-f`-style flag to every documented command.
+- Docker: root `compose.yaml` is DEV ONLY and now db-only — PostgreSQL on
+  localhost:5432 with dev credentials, the API runs on the host via `dotnet watch`.
+  The former `try` profile is gone: `deploy/standalone/` covers "run the real image
+  locally" and is what the README quickstart uses.
+- `deploy/` = production artifacts, one folder per reverse-proxy variant, each a
+  self-contained `compose.yaml` + `.env.example` copied to a server directory (no
+  checkout, no build, bare `docker compose` commands): `deploy/traefik/` (labels, no
+  published port) and `deploy/standalone/` (published on `${HOPPER_BIND_ADDRESS:-127.0.0.1}:8080`,
+  bring your own proxy). `deploy/maintenance/` holds `backup.sh` / `restore.sh`, which
+  cd to their own directory and are copied next to the chosen compose file. There is
+  deliberately no `deploy/README.md` — it duplicated `docs/deployment.md`. Images come from
+  `ghcr.io/etiennecoumont/hopper-jobqueue`, published by `.github/workflows/docker.yml`
+  (tests gate the publish; tags: `latest` on main, `X.Y.Z` on `v*` tags, immutable
+  `sha-<commit>`). There is no compose.override.yaml and no wrapper — keep it that way.
 
 ## Invariants (covered by tests, do not break)
 
@@ -81,6 +92,18 @@ invariants and decisions — read it before any evolution.
   the in-container `dotnet watch` dev override is gone — dev is host-run `dotnet
   watch` + a db-only compose; production is a copied deploy artifact pulling the
   CI-built GHCR image instead of `docker compose build` on the server.
+- **Deployment variants are duplicated on purpose, never factored** (2026-08-17). The
+  install model is "curl one compose file onto the server", so no variant may
+  `include:`/`extends:` a shared base — the repeated `hopper-db` block is the price.
+  A new variant (caddy, nginx…) = a new self-contained folder keeping the same project
+  name, service names and `hopper-pgdata` volume, so `deploy/maintenance/` and the docs
+  keep applying. `docs/deployment.md` is the single place documenting the procedure —
+  don't re-document install steps in `deploy/`.
+- **`deploy/standalone` publishes on loopback by default.** Without a TLS proxy in
+  front, `/admin` is unusable off `localhost` (`Secure` cookie), nothing filters
+  `/admin` by IP, and `KnownProxies`/`KnownIPNetworks` are cleared — a directly
+  reachable port lets anyone forge `X-Forwarded-For`/`-Proto`. Do not widen that
+  default or drop the warning at the top of the file.
 
 ## Commands
 
@@ -90,11 +113,13 @@ dotnet test                       # Docker required (Testcontainers, postgres:17
 docker compose up -d              # dev: PostgreSQL only (localhost:5432, password hopper-dev)
 export HOPPER_DB_CONNECTIONSTRING="Host=127.0.0.1;Port=5432;Database=hopper;Username=hopper;Password=hopper-dev"
 dotnet watch --project src/HopperJobQueue.Api run --urls http://localhost:8080
-docker compose --profile try up -d   # full stack from the GHCR image, no SDK
-deploy/backup.sh <dir>            # prod: custom-format pg_dump + 7d/4w retention
-deploy/restore.sh <dump>          # prod: stops the API, recreates the db, restarts
+cd <dir> && docker compose up -d     # run the real image: deploy/standalone/ files, no SDK
+deploy/maintenance/backup.sh <dir>    # prod: custom-format pg_dump + 7d/4w retention
+deploy/maintenance/restore.sh <dump>  # prod: stops the API, recreates the db, restarts
 ```
 
-Config via env only, `HOPPER_` prefix (see README / `deploy/.env.example`). No new NuGet
+Config via env only, `HOPPER_` prefix (see README / `deploy/*/.env.example`; only
+`DB_CONNECTIONSTRING`, `BOOTSTRAP_ADMIN_KEY`, `SWEEP_INTERVAL_SECONDS` and `LOG_LEVEL`
+reach the app — the rest are consumed by compose). No new NuGet
 dependency without validation. UTC timestamps everywhere
 (`timestamptz` ↔ `DateTimeOffset`, Dapper handler in `Infrastructure/DapperConfig.cs`).
