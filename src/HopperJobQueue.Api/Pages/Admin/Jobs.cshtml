@@ -1,0 +1,89 @@
+@page "/admin/jobs"
+@model HopperJobQueue.Api.Pages.Admin.JobsModel
+@{
+    ViewData["Title"] = "Jobs";
+}
+
+<h1>Jobs</h1>
+
+<form method="get" class="filters">
+    <label>Statut
+        <select name="status">
+            <option value="">(tous)</option>
+            @foreach (var status in JobStatus.All)
+            {
+                if (status == Model.Status)
+                {
+                    <option value="@status" selected>@status</option>
+                }
+                else
+                {
+                    <option value="@status">@status</option>
+                }
+            }
+        </select>
+    </label>
+    <label>Projet <input type="text" name="project" value="@Model.Project" /></label>
+    <label>File <input type="text" name="kind" value="@Model.Kind" /></label>
+    <label>Recherche <input type="text" name="q" value="@Model.Q" /></label>
+    <button type="submit">Filtrer</button>
+    <a href="/admin/jobs">Réinitialiser</a>
+</form>
+
+<p class="muted">@Model.Result.Total job(s) — page @Model.Result.Page</p>
+
+<table class="jobs-table">
+    <thead>
+    <tr>
+        <th>Id</th>
+        <th>File</th>
+        <th>Projet</th>
+        <th>Statut</th>
+        <th>Ess.</th>
+        <th>Worker</th>
+        <th>Créé</th>
+        <th>Actions</th>
+    </tr>
+    </thead>
+    <tbody>
+    @foreach (var job in Model.Result.Items)
+    {
+        <tr>
+            <td><a href="/admin/jobs/@job.Id">#@job.Id</a></td>
+            <td>@job.Kind</td>
+            <td>@(job.Project ?? "—")</td>
+            <td><span class="badge status-@job.Status">@job.Status</span></td>
+            <td>@job.Attempts/@job.MaxAttempts</td>
+            <td>@(job.WorkerId ?? "—")</td>
+            <td><time datetime="@job.CreatedAt.ToString("O")">@job.CreatedAt.ToString("MM-dd HH:mm")</time></td>
+            <td class="actions">
+                @if (job.Status is JobStatus.Failed or JobStatus.Expired or JobStatus.Cancelled)
+                {
+                    <form method="post" asp-page-handler="Requeue" asp-route-id="@job.Id">
+                        <input type="hidden" name="returnQuery" value="@Model.CurrentQuery" />
+                        <button type="submit">Requeue</button>
+                    </form>
+                }
+                @if (job.Status is JobStatus.Pending or JobStatus.Leased)
+                {
+                    <form method="post" asp-page-handler="Cancel" asp-route-id="@job.Id">
+                        <input type="hidden" name="returnQuery" value="@Model.CurrentQuery" />
+                        <button type="submit" class="danger">Annuler</button>
+                    </form>
+                }
+            </td>
+        </tr>
+    }
+    </tbody>
+</table>
+
+<nav class="pager">
+    @if (Model.Result.Page > 1)
+    {
+        <a href="/admin/jobs?@Model.QueryForPage(Model.Result.Page - 1)">← Précédente</a>
+    }
+    @if ((long)Model.Result.Page * Model.Result.PageSize < Model.Result.Total)
+    {
+        <a href="/admin/jobs?@Model.QueryForPage(Model.Result.Page + 1)">Suivante →</a>
+    }
+</nav>

@@ -1,0 +1,17 @@
+# Build
+bin/
+obj/
+*.user
+
+# Config locale — jamais de secret dans le dépôt
+appsettings.Development.json
+launchSettings.json
+.env
+
+# Sauvegardes locales
+backups/
+
+# IDE
+.vs/
+.idea/
+*.swp

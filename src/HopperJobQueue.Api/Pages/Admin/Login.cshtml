@@ -1,0 +1,19 @@
+@page "/admin/login"
+@model HopperJobQueue.Api.Pages.Admin.LoginModel
+@{
+    ViewData["Title"] = "Connexion";
+}
+
+<section class="login-card">
+    <h1>Connexion</h1>
+    <p>Saisir une clé API de scope <code>admin</code>. Elle est échangée contre un cookie de session.</p>
+    @if (Model.Error is not null)
+    {
+        <p class="error">@Model.Error</p>
+    }
+    <form method="post">
+        <label for="key">Clé admin</label>
+        <input type="password" id="key" name="key" autocomplete="off" autofocus required />
+        <button type="submit">Se connecter</button>
+    </form>
+</section>

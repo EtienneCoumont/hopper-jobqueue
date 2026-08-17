@@ -1,0 +1,82 @@
+@page "/admin/jobs/{id:long}"
+@model HopperJobQueue.Api.Pages.Admin.JobModel
+@{
+    ViewData["Title"] = $"Job #{Model.Job.Id}";
+}
+
+<h1>Job #@Model.Job.Id <span class="badge status-@Model.Job.Status">@Model.Job.Status</span></h1>
+
+<div class="job-actions">
+    @if (Model.Job.Status is JobStatus.Failed or JobStatus.Expired or JobStatus.Cancelled)
+    {
+        <form method="post" asp-page-handler="Requeue">
+            <button type="submit">Requeue (remet en pending, tentatives à zéro)</button>
+        </form>
+    }
+    @if (Model.Job.Status is JobStatus.Pending or JobStatus.Leased)
+    {
+        <form method="post" asp-page-handler="Cancel">
+            <button type="submit" class="danger">Annuler</button>
+        </form>
+    }
+</div>
+
+<section class="panel">
+    <h2>Détails</h2>
+    <dl class="job-details">
+        <dt>Clé d'idempotence</dt><dd><code>@Model.Job.IdempotencyKey</code></dd>
+        <dt>File (kind)</dt><dd>@Model.Job.Kind</dd>
+        <dt>Projet</dt><dd>@(Model.Job.Project ?? "—")</dd>
+        <dt>Tentatives</dt><dd>@Model.Job.Attempts / @Model.Job.MaxAttempts</dd>
+        <dt>Worker</dt><dd>@(Model.Job.WorkerId ?? "—")</dd>
+        <dt>Créé</dt><dd>@Model.Job.CreatedAt.ToString("yyyy-MM-dd HH:mm:ss") UTC</dd>
+        <dt>Expire</dt><dd>@Model.Job.ExpiresAt.ToString("yyyy-MM-dd HH:mm:ss") UTC</dd>
+        <dt>Bail jusqu'à</dt><dd>@(Model.Job.LeaseUntil?.ToString("yyyy-MM-dd HH:mm:ss") is string lu ? lu + " UTC" : "—")</dd>
+        <dt>Terminé</dt><dd>@(Model.Job.FinishedAt?.ToString("yyyy-MM-dd HH:mm:ss") is string fa ? fa + " UTC" : "—")</dd>
+    </dl>
+</section>
+
+@if (Model.Job.LastError is not null)
+{
+    <section class="panel">
+        <h2>Dernière erreur</h2>
+        <pre class="error-block">@Model.Job.LastError</pre>
+    </section>
+}
+
+<section class="panel">
+    <h2>Payload</h2>
+    <details open>
+        <summary>JSON (@Model.PayloadPretty.Length car.)</summary>
+        <pre class="json-block">@Model.PayloadPretty</pre>
+    </details>
+</section>
+
+@if (Model.ResultPretty is not null)
+{
+    <section class="panel">
+        <h2>Résultat</h2>
+        <details open>
+            <summary>JSON (@Model.ResultPretty.Length car.)</summary>
+            <pre class="json-block">@Model.ResultPretty</pre>
+        </details>
+    </section>
+}
+
+<section class="panel">
+    <h2>Timeline</h2>
+    <table>
+        <thead><tr><th>Quand</th><th>Transition</th><th>Acteur</th><th>Note</th></tr></thead>
+        <tbody>
+        @foreach (var evt in Model.Events)
+        {
+            <tr>
+                <td><time datetime="@evt.At.ToString("O")">@evt.At.ToString("yyyy-MM-dd HH:mm:ss")</time></td>
+                <td>@(evt.FromStatus ?? "∅") → <span class="badge status-@evt.ToStatus">@evt.ToStatus</span></td>
+                <td>@evt.Actor</td>
+                <td>@(evt.Note ?? "")</td>
+            </tr>
+        }
+        </tbody>
+    </table>
+</section>
