@@ -1,0 +1,42 @@
+@page "/admin/keys/{id:long}"
+@model HopperJobQueue.Api.Pages.Admin.KeyEditModel
+@{
+    ViewData["Title"] = $"Edit key — {Model.Key.Name}";
+}
+
+<h1>Edit key</h1>
+
+<section class="panel">
+    <form method="post" class="key-form">
+        <label>Name <input type="text" name="name" required maxlength="200" value="@Model.Key.Name" /></label>
+        <label>Scope
+            <input type="text" value="@Model.Key.Scope" disabled />
+        </label>
+        <label>Prefix
+            <input type="text" value="@(Model.Key.Prefix)…" disabled />
+        </label>
+        <fieldset>
+            <legend>Allowed kinds (allowed_kinds — not applicable to admin)</legend>
+            @if (Model.Kinds.Count == 0)
+            {
+                <p class="muted">No kind declared. <a href="/admin/kinds">Declare a kind first.</a></p>
+            }
+            @foreach (var kind in Model.Kinds)
+            {
+                if (Model.Key.AllowedKinds.Contains(kind.Name))
+                {
+                    <label class="checkbox"><input type="checkbox" name="allowedKinds" value="@kind.Name" checked /> @kind.Name</label>
+                }
+                else
+                {
+                    <label class="checkbox"><input type="checkbox" name="allowedKinds" value="@kind.Name" /> @kind.Name</label>
+                }
+            }
+        </fieldset>
+        <button type="submit">Save</button>
+        <a href="/admin/keys">Cancel</a>
+    </form>
+    <p class="muted">The scope is immutable: a key is an identity, and silently changing
+       its privileges would defeat targeted revocation. Need another scope? Create a new
+       key and revoke this one.</p>
+</section>

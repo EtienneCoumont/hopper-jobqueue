@@ -20,7 +20,9 @@ public sealed class JobsModel(JobStore jobStore) : PageModel
     [BindProperty(SupportsGet = true)]
     public string? Q { get; set; }
 
-    [BindProperty(SupportsGet = true, Name = "page")]
+    // "page" is a reserved Razor Pages route value (it holds the page path), and route
+    // values shadow the query string during binding — hence "p".
+    [BindProperty(SupportsGet = true, Name = "p")]
     public int PageNumber { get; set; } = 1;
 
     public JobPage Result { get; private set; } = null!;
@@ -52,7 +54,7 @@ public sealed class JobsModel(JobStore jobStore) : PageModel
 
         if (page > 1)
         {
-            parts.Add($"page={page}");
+            parts.Add($"p={page}");
         }
 
         return string.Join("&", parts);

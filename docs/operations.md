@@ -12,6 +12,10 @@ Server-rendered Razor Pages under `/admin`, behind the proxy's IP allowlist plus
 admin-key sign-in exchanged for a session cookie (`HttpOnly`, `Secure`,
 `SameSite=Strict`).
 
+Everything the dashboard does is also exposed by the admin API (scope `admin`) — job
+listing and transitions, stats, kind and key management — so all of it can be scripted;
+see the [API reference](api.md).
+
 ### Overview — "is it running?"
 
 ![Overview](images/dashboard-overview.png)
@@ -45,10 +49,13 @@ its result the same way:
 
 ![Keys](images/dashboard-keys.png)
 
-Create and revoke API keys. The clear-text key is displayed exactly once, at creation —
-only the SHA-256 hash is stored. One key per producer and per worker, never shared:
-that is what makes targeted revocation painless. Revocation takes effect immediately on
-the API and invalidates dashboard sessions on their next request.
+Create, edit and revoke API keys. The clear-text key is displayed exactly once, at
+creation — only the SHA-256 hash is stored. **Edit** changes the name and the allowed
+kinds of an active key (effective immediately, the secret itself never changes); the
+scope is immutable — a key is an identity, so a scope change means a new key plus a
+revocation. One key per producer and per worker, never shared: that is what makes
+targeted revocation painless. Revocation takes effect immediately on the API and
+invalidates dashboard sessions on their next request.
 
 ### Kinds
 
