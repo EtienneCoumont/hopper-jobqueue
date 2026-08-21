@@ -57,6 +57,25 @@ public sealed class ApiKeyStore(NpgsqlDataSource dataSource)
         }
     }
 
+    /// <summary>
+    /// Edits a key's name and allowed kinds. The scope is immutable by design (a key is
+    /// an identity — changing its scope would be a silent privilege change; create a new
+    /// key instead), and revoked keys stay frozen.
+    /// </summary>
+    public async Task<ApiKeyRecord?> UpdateAsync(
+        long id, string name, string[] allowedKinds, CancellationToken ct = default)
+    {
+        await using var conn = await dataSource.OpenConnectionAsync(ct);
+        return await conn.QuerySingleOrDefaultAsync<ApiKeyRecord>(
+            """
+            update jobqueue.api_keys
+            set name = @Name, allowed_kinds = @AllowedKinds
+            where id = @Id and revoked_at is null
+            returning *
+            """,
+            new { Id = id, Name = name, AllowedKinds = allowedKinds });
+    }
+
     public async Task<bool> RevokeAsync(long id, CancellationToken ct = default)
     {
         await using var conn = await dataSource.OpenConnectionAsync(ct);

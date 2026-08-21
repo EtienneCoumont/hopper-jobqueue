@@ -1,6 +1,7 @@
 using System.Security.Claims;
 using System.Threading.RateLimiting;
 using Dapper;
+using HopperJobQueue.Api.Admin;
 using HopperJobQueue.Api.Auth;
 using HopperJobQueue.Api.Domain;
 using HopperJobQueue.Api.Infrastructure;
@@ -221,6 +222,7 @@ try
     });
 
     app.MapJobEndpoints();
+    app.MapAdminEndpoints();
     app.MapRazorPages();
 
     app.Run();

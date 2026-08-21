@@ -6,8 +6,9 @@ invariants and decisions — read it before any evolution.
 
 ## Architecture
 
-- `src/HopperJobQueue.Api` — single project: minimal API (`/api/v1`), Razor Pages
-  (`/admin`), background task. No layers, no ORM: Dapper + explicit SQL in
+- `src/HopperJobQueue.Api` — single project: minimal API (`/api/v1`:
+  `Jobs/JobEndpoints.cs` + `Admin/AdminEndpoints.cs` for kind/key management), Razor
+  Pages (`/admin`), background task. No layers, no ORM: Dapper + explicit SQL in
   `Jobs/JobStore.cs` (jobs) and `Auth/ApiKeyStore.cs` (keys).
 - `Migrations/*.sql` — numbered embedded scripts, applied by DbUp at startup under
   `pg_advisory_lock` (failed migration = non-zero exit, no starting on an inconsistent
@@ -86,8 +87,15 @@ invariants and decisions — read it before any evolution.
 - **Antiforgery cookie set to `SameAsRequest`** (the session cookie itself is properly
   `Secure`/`HttpOnly`/`Strict`): `Always` breaks form rendering over direct HTTP (dev).
   Behind Traefik, X-Forwarded-Proto=https ⇒ Secure in production.
-- **Kind management on the dashboard** (`/admin/kinds`): needed for "kind declared
-  before use" + pause control; deliberately absent from the API surface.
+- **Admin API has dashboard parity** (owner's decision, 2026-08-21): kind and key
+  management (`/api/v1/kinds`, `/api/v1/keys` in `Admin/AdminEndpoints.cs`) exist on
+  the API as well as on the dashboard — the earlier "dashboard-only" stance is gone.
+  Two rules hold on both surfaces: a key's `scope` is immutable (a key is an identity —
+  new scope = new key + revoke) and a kind's only mutable field is `enabled` (its
+  defaults are a contract with producers).
+- **Jobs list pagination binds `?p=`, not `?page=`.** `page` is a reserved Razor Pages
+  route value (it holds the page path) and route values shadow the query string during
+  binding — `Name = "page"` silently pins the pager to page 1. Don't "clean it up".
 - **Docker architecture diverges from the brief's §13** (owner's decision, 2026-08):
   the in-container `dotnet watch` dev override is gone — dev is host-run `dotnet
   watch` + a db-only compose; production is a copied deploy artifact pulling the

@@ -64,9 +64,10 @@
                 <td>@(key.AllowedKinds.Length == 0 ? "—" : string.Join(", ", key.AllowedKinds))</td>
                 <td>@(key.LastUsedAt?.ToString("yyyy-MM-dd HH:mm") ?? "never")</td>
                 <td>@(key.RevokedAt is null ? "active" : $"revoked on {key.RevokedAt:yyyy-MM-dd}")</td>
-                <td>
+                <td class="actions">
                     @if (key.RevokedAt is null)
                     {
+                        <a href="/admin/keys/@key.Id">Edit</a>
                         <form method="post" asp-page-handler="Revoke" asp-route-id="@key.Id">
                             <button type="submit" class="danger">Revoke</button>
                         </form>

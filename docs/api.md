@@ -158,6 +158,55 @@ curl -s https://hopper.example.com/api/v1/stats -H "Authorization: Bearer $ADMIN
 Invalid transitions (requeue of a `done` job, cancel of a `failed` one…) return `409`
 with an explanatory message.
 
+### Kinds (queues)
+
+```bash
+# list all kinds with their defaults and enabled state
+curl -s https://hopper.example.com/api/v1/kinds -H "Authorization: Bearer $ADMIN_KEY"
+
+# declare a kind (a job can only be enqueued into a declared kind)
+curl -s https://hopper.example.com/api/v1/kinds \
+  -H "Authorization: Bearer $ADMIN_KEY" -H 'Content-Type: application/json' \
+  -d '{ "name": "invoice-ocr", "description": "OCR of scanned invoices",
+        "defaultTtlSeconds": 86400, "defaultMaxAttempts": 3,
+        "defaultLeaseSeconds": 1200, "retentionDays": 90 }'
+
+# pause / resume — a paused kind still accepts enqueues but is never distributed
+curl -s -X PATCH https://hopper.example.com/api/v1/kinds/invoice-ocr \
+  -H "Authorization: Bearer $ADMIN_KEY" -H 'Content-Type: application/json' \
+  -d '{ "enabled": false }'
+```
+
+Only `name` is required on creation; every default falls back to the values shown in
+the dashboard (TTL 86400 s, 3 attempts, lease 1200 s, retention 90 days). A duplicate
+name is `409`. `enabled` is the only mutable field of a kind — the defaults are part
+of its contract with producers.
+
+### API keys
+
+```bash
+# list — prefix, scope, allowed kinds, last use, revocation; never a secret or hash
+curl -s https://hopper.example.com/api/v1/keys -H "Authorization: Bearer $ADMIN_KEY"
+
+# create — the clear-text key is in this response and nowhere else, ever
+curl -s https://hopper.example.com/api/v1/keys \
+  -H "Authorization: Bearer $ADMIN_KEY" -H 'Content-Type: application/json' \
+  -d '{ "name": "scheduler-producer", "scope": "producer", "allowedKinds": ["invoice-ocr"] }'
+
+# edit name and/or allowed kinds — effective immediately, the secret does not change
+curl -s -X PATCH https://hopper.example.com/api/v1/keys/7 \
+  -H "Authorization: Bearer $ADMIN_KEY" -H 'Content-Type: application/json' \
+  -d '{ "name": "scheduler-producer-v2", "allowedKinds": ["invoice-ocr", "mail-digest"] }'
+
+# revoke — idempotent, immediate; a revoked key cannot be edited or un-revoked
+curl -s -X POST https://hopper.example.com/api/v1/keys/7/revoke -H "Authorization: Bearer $ADMIN_KEY"
+```
+
+`scope` is one of `producer`, `worker`, `admin`. Unknown names in `allowedKinds` are
+`400` with the offending names in an `unknownKinds` array. The scope of an existing
+key is immutable — a key is an identity; to change privileges, create a new key and
+revoke the old one (editing a revoked key is `409`).
+
 ## Health
 
 ```bash
