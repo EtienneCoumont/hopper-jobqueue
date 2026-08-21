@@ -188,10 +188,7 @@ public static class AdminEndpoints
 
         if (current.RevokedAt is not null)
         {
-            return Results.Problem(
-                statusCode: StatusCodes.Status409Conflict,
-                title: "Key revoked",
-                detail: "A revoked key cannot be edited.");
+            return RevokedKeyProblem();
         }
 
         var allowedKinds = request.AllowedKinds?.Distinct().ToArray() ?? current.AllowedKinds;
@@ -202,7 +199,9 @@ public static class AdminEndpoints
         }
 
         var updated = await keyStore.UpdateAsync(id, request.Name?.Trim() ?? current.Name, allowedKinds, ct);
-        return updated is null ? Results.NotFound() : Results.Ok(KeyView(updated));
+        // Keys are never deleted, only revoked — so a null here can only mean the key
+        // was revoked between the check above and the update: 409, not 404.
+        return updated is null ? RevokedKeyProblem() : Results.Ok(KeyView(updated));
     }
 
     private static async Task<IResult> RevokeKeyAsync(long id, ApiKeyStore store, CancellationToken ct)
@@ -226,6 +225,12 @@ public static class AdminEndpoints
         var existing = (await store.ListKindsAsync(ct)).Select(k => k.Name).ToHashSet(StringComparer.Ordinal);
         return requested.Where(k => !existing.Contains(k)).ToArray();
     }
+
+    private static IResult RevokedKeyProblem() =>
+        Results.Problem(
+            statusCode: StatusCodes.Status409Conflict,
+            title: "Key revoked",
+            detail: "A revoked key cannot be edited.");
 
     private static IResult UnknownKindsProblem(string[] unknown) =>
         Results.Problem(
